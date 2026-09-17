@@ -1,0 +1,32 @@
+services:
+  telemetry:
+    build: .
+    image: telemetria:latest
+    container_name: telemetria
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      # Sin clave la API queda abierta: úsala siempre fuera de la LAN de confianza.
+      TELEMETRY_API_KEY: "${TELEMETRY_API_KEY:-}"
+      TELEMETRY_MAX_POINTS: "${TELEMETRY_MAX_POINTS:-5000}"
+      TELEMETRY_COMPACT_EVERY: "${TELEMETRY_COMPACT_EVERY:-2000}"
+      # Espejo GitHub (opcional): consolida todos los dispositivos en data/latest.json
+      # del repo para consumirlo desde GitHub Pages sin exponer la API a Internet.
+      # GITHUB_REPO: "usuario/repo" (obligatorio junto con GITHUB_TOKEN para activar)
+      GITHUB_REPO: "${GITHUB_REPO:-}"
+      GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
+      GITHUB_BRANCH: "${GITHUB_BRANCH:-main}"
+      GITHUB_PATH: "${GITHUB_PATH:-data/latest.json}"
+      GITHUB_MIN_INTERVAL: "${GITHUB_MIN_INTERVAL:-60}"
+    volumes:
+      # El almacén es un JSONL append-only: contiene ubicaciones, trátalo como dato personal.
+      - telemetry-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2)"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  telemetry-data:

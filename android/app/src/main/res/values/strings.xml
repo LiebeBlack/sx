@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Telemetría</string>
+    <string name="accessibility_description">Centinela de Telemetría: rearma el rastreo cuando el sistema o el usuario lo interrumpen. No lee el contenido de la pantalla ni los datos de otras apps.</string>
+    <string name="device_admin_description">Administrador de Telemetría: mantiene el rastreo activo y evita la desinstalación accidental.</string>
+</resources>

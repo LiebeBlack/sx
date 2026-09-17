@@ -1,0 +1,49 @@
+# ------------------------------------------------------------------ datos sensibles
+# Las trazas de ubicación son datos personales: nunca deben subirse al repositorio.
+telemetry_store.jsonl
+*.jsonl
+*.jsonl.tmp
+data/
+.env
+.env.*
+
+# ------------------------------------------------------------------ Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# ------------------------------------------------------------------ Android / Gradle
+android/.gradle/
+android/build/
+android/app/build/
+android/captures/
+android/.cxx/
+android/local.properties
+android/keystore.properties
+*.jks
+*.keystore
+*.apk
+*.aab
+*.ap_
+gradle-app.setting
+.gradle/
+
+# ------------------------------------------------------------------ IDE y sistema
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ------------------------------------------------------------------ entorno del agente
+.freebuff/

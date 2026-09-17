@@ -1,0 +1,4 @@
+// Proyecto raíz: solo declara el plugin de Android Gradle. Requiere JDK 17 y Gradle 8.7+.
+plugins {
+    id 'com.android.application' version '8.5.2' apply false
+}

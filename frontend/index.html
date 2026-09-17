@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Telemetría · Visualizador P2P</title>
+<meta name="description" content="Visualizador en tiempo real de telemetría y geolocalización (Vanilla JS).">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#121a23; --panel2:#0e151d; --line:#1f2b38;
+    --txt:#dbe6f0; --dim:#8199ad; --ok:#2ecc71; --warn:#f1c40f; --err:#e74c3c; --acc:#38bdf8;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--txt);font:13px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;flex-direction:column}
+  header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+  h1{font-size:14px;margin:0 8px 0 0;letter-spacing:.5px;font-weight:600;white-space:nowrap}
+  h1 span{color:var(--acc)}
+  label{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.6px}
+  input,select,button{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:inherit;font-size:12px;outline:none}
+  input:focus,select:focus{border-color:var(--acc)}
+  input[type=text]{min-width:150px}
+  input[type=checkbox]{width:auto;padding:0;margin:0 4px 0 0;vertical-align:-1px;accent-color:var(--acc)}
+  label.check{display:inline-flex;align-items:center;gap:2px;cursor:pointer;text-transform:uppercase}
+  #apiBase{flex:1 1 320px;min-width:220px;font-family:var(--mono)}
+  button{cursor:pointer;transition:.15s}
+  button:hover{border-color:var(--acc)}
+  button.primary{border-color:var(--acc);color:var(--acc)}
+  button.danger{border-color:var(--err);color:var(--err)}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);font-size:11px;white-space:nowrap}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--dim)}
+  .pill.ok .dot{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  .pill.err .dot{background:var(--err);box-shadow:0 0 8px var(--err)}
+  .pill.wait .dot{background:var(--warn);box-shadow:0 0 8px var(--warn)}
+  main{flex:1;display:grid;grid-template-columns:1fr 320px;min-height:0}
+  #stage{position:relative;min-height:0}
+  #map{position:absolute;inset:0;background:#0d1319}
+  #radar{position:absolute;inset:0;display:none}
+  #radar.on{display:block}
+  #map.off{display:none}
+  aside{background:var(--panel);border-left:1px solid var(--line);overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px}
+  .card{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--dim);border-radius:8px;padding:8px 10px;cursor:pointer}
+  .card:hover{border-color:var(--acc)}
+  .card.offline{opacity:.55}
+  .card .top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+  .card .id{font-family:var(--mono);font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .card .age{font-size:11px;color:var(--dim);white-space:nowrap}
+  .kv{display:grid;grid-template-columns:repeat(2,1fr);gap:2px 10px;margin-top:6px;font-size:11px;color:var(--dim);font-family:var(--mono)}
+  .kv b{color:var(--txt);font-weight:500}
+  .bars{display:flex;gap:6px;align-items:center;margin-top:6px}
+  .bar{height:6px;background:#1b2632;border-radius:3px;overflow:hidden;flex:1}
+  .bar>i{display:block;height:100%;background:var(--acc)}
+  .sub{font-size:11px;color:var(--dim);font-family:var(--mono);word-break:break-all}
+  .fake{color:var(--warn);font-size:10px;border:1px solid var(--warn);border-radius:4px;padding:0 4px}
+  footer{display:flex;flex-wrap:wrap;gap:14px;padding:6px 12px;background:var(--panel);border-top:1px solid var(--line);font-size:11px;color:var(--dim);font-family:var(--mono)}
+  footer b{color:var(--txt)}
+  .leaflet-container{background:#0d1319;font:inherit}
+  .dev-marker{position:relative}
+  .dev-marker .pin{width:26px;height:26px;border-radius:50% 50% 50% 0;transform-origin:50% 100%;background:var(--c);box-shadow:0 0 10px var(--c),0 0 0 2px rgba(0,0,0,.6)}
+  .dev-marker .pulse{position:absolute;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:var(--c);opacity:.35;animation:pulse 2s infinite}
+  @keyframes pulse{0%{transform:scale(.6);opacity:.45}100%{transform:scale(2.4);opacity:0}}
+  @media (max-width:860px){main{grid-template-columns:1fr;grid-template-rows:60vh auto}aside{border-left:0;border-top:1px solid var(--line)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>TELEMETRÍA <span>P2P</span></h1>
+  <select id="feedSel">
+    <option value="api">API en vivo</option>
+    <option value="github">GitHub Pages (fichero)</option>
+  </select>
+  <label for="apiBase">API</label>
+  <input id="apiBase" type="text" placeholder="https://mi-servidor.ejemplo.com  (vacío = mismo origen)" spellcheck="false">
+  <label for="apiToken">Token</label>
+  <input id="apiToken" type="text" placeholder="X-Api-Key" spellcheck="false" style="width:120px">
+  <label for="intervalSel">Intervalo</label>
+  <select id="intervalSel">
+    <option value="1000">1 s</option>
+    <option value="3000" selected>3 s</option>
+    <option value="5000">5 s</option>
+    <option value="10000">10 s</option>
+  </select>
+  <select id="viewSel">
+    <option value="map">Mapa</option>
+    <option value="radar">Radar</option>
+  </select>
+  <select id="followSel"><option value="">Sin seguimiento</option></select>
+  <label class="check" for="smoothToggle"><input type="checkbox" id="smoothToggle"> suavizado</label>
+  <button id="toggleBtn" class="primary">Pausar</button>
+  <button id="clearBtn" class="danger" title="Vacía el historial local del navegador">Limpiar</button>
+  <span id="statusPill" class="pill wait"><i class="dot"></i><span id="statusText">iniciando…</span></span>
+</header>
+
+<main>
+  <div id="stage">
+    <div id="map"></div>
+    <canvas id="radar"></canvas>
+  </div>
+  <aside>
+    <div id="devices"></div>
+    <div class="sub" id="emptyHint">Esperando telemetría…</div>
+  </aside>
+</main>
+
+<footer>
+  <span>dispositivos <b id="statDevices">0</b></span>
+  <span>online <b id="statOnline">0</b></span>
+  <span>puntos <b id="statPoints">0</b></span>
+  <span>recorrido <b id="statDistance">0 m</b></span>
+  <span>última sync <b id="statSync">—</b></span>
+  <span>latencia <b id="statLatency">—</b></span>
+</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var LS = { base: 'telemetry.base', token: 'telemetry.token', interval: 'telemetry.interval', view: 'telemetry.view', smooth: 'telemetry.smooth', feed: 'telemetry.feed', ghPath: 'telemetry.ghpath' };
+  var POLL_LIMIT = 300;          // puntos por dispositivo y por sondeo
+  var MAX_CLIENT_POINTS = 2000;  // retención local
+  var STALE_MS = 60000;          // dispositivo considerado offline
+  var HTTP_TIMEOUT_MS = 8000;
+  var FETCH_PATH = '/api/locations?format=compact&limit=' + POLL_LIMIT;
+  var GH_DEFAULT_PATH = 'data/latest.json';   // publicado por la app o por el espejo del backend
+
+  var el = function (id) { return document.getElementById(id); };
+  var ui = {
+    base: el('apiBase'), token: el('apiToken'), interval: el('intervalSel'), view: el('viewSel'),
+    feed: el('feedSel'),
+    follow: el('followSel'), smooth: el('smoothToggle'), toggle: el('toggleBtn'), clear: el('clearBtn'),
+    pill: el('statusPill'), statusText: el('statusText'), devices: el('devices'), hint: el('emptyHint'),
+    map: el('map'), radar: el('radar'),
+    statDevices: el('statDevices'), statOnline: el('statOnline'), statPoints: el('statPoints'),
+    statDistance: el('statDistance'), statSync: el('statSync'), statLatency: el('statLatency')
+  };
+
+  var state = {
+    base: localStorage.getItem(LS.base) || window.TELEMETRY_API || '',
+    token: localStorage.getItem(LS.token) || window.TELEMETRY_TOKEN || '',
+    interval: parseInt(localStorage.getItem(LS.interval), 10) || 3000,
+    view: localStorage.getItem(LS.view) || 'map',
+    smooth: localStorage.getItem(LS.smooth) === '1',
+    feed: localStorage.getItem(LS.feed) || 'api',
+    ghPath: localStorage.getItem(LS.ghPath) || GH_DEFAULT_PATH,
+    running: true,
+    failures: 0,
+    inFlight: false,
+    timer: null,
+    lastSync: 0,
+    lastLatency: 0,
+    firstLoad: true,
+    devices: new Map()
+  };
+
+  var map = null;
+  var canvas = ui.radar;
+  var ctx = canvas.getContext('2d');
+
+  /* ------------------------------------------------------------------ utilidades */
+
+  function hashHue(text) {
+    var h = 0;
+    for (var i = 0; i < text.length; i++) { h = (h * 31 + text.charCodeAt(i)) % 360; }
+    return h;
+  }
+
+  function esc(value) {
+    return String(value === null || value === undefined ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function apiBase() {
+    var base = (ui.base.value || state.base || '').trim().replace(/\/+$/, '');    return base;
+  }
+
+  function headers() {
+    var token = (ui.token.value || state.token || '').trim();
+    var out = { 'Accept': 'application/json' };
+    if (token) { out['X-Api-Key'] = token; }
+    return out;
+  }
+
+  function fmtDistance(m) {
+    if (!isFinite(m)) { return '—'; }
+    return m >= 1000 ? (m / 1000).toFixed(m >= 10000 ? 0 : 2) + ' km' : Math.round(m) + ' m';
+  }
+
+  function fmtSpeed(mps) {
+    if (mps === null || mps === undefined || !isFinite(mps)) { return '—'; }
+    return (mps * 3.6).toFixed(1) + ' km/h';
+  }
+
+  function fmtAltitude(p) {
+    if (p.altitudeFused !== null && p.altitudeFused !== undefined) { return Math.round(p.altitudeFused) + ' m*'; }
+    if (p.altitudeBaro !== null && p.altitudeBaro !== undefined) { return Math.round(p.altitudeBaro) + ' m b'; }
+    if (p.altitude !== null && p.altitude !== undefined) { return Math.round(p.altitude) + ' m'; }
+    return '—';
+  }
+
+  function shortProvider(provider) {
+    if (!provider) { return '—'; }
+    return String(provider).replace('LocationManager/', '').replace('/last', '·last').replace('/current', '·now');
+  }
+
+  function fmtAge(ms) {
+    if (ms < 1000) { return 'ahora'; }
+    if (ms < 60000) { return Math.round(ms / 1000) + ' s'; }
+    if (ms < 3600000) { return Math.round(ms / 60000) + ' min'; }
+    return Math.round(ms / 3600000) + ' h';
+  }
+
+  function setStatus(kind, text) {
+    ui.pill.className = 'pill ' + kind;
+    ui.statusText.textContent = text;
+  }
+
+  /* ------------------------------------------------------------------ fuente GitHub Pages */
+
+  // En modo "github" el visualizador lee el fichero publicado (Contents API o espejo del
+  // backend) desde el mismo dominio de Pages: sin backend y sin CORS.
+  function githubFileUrl() {
+    var base = apiBase();
+    if (!base) {
+      var parts = location.pathname.split('/').filter(Boolean);
+      var repoBase = parts.length ? '/' + parts[0] + '/' : '/';   // p. ej. /telemetria/ en Pages
+      return repoBase + state.ghPath;
+    }
+    return base.replace(/\/+$/, '') + '/' + state.ghPath;
+  }
+
+  function githubToApiShape(file) {
+    var devices = (file && Array.isArray(file.devices)) ? file.devices : [];
+    var now = Date.now();
+    return {
+      ok: true,
+      source: 'github',
+      server_time: file.generated || now,
+      count: devices.length,
+      devices: devices.map(function (dev) {
+        var rows = Array.isArray(dev.points) ? dev.points : [];
+        var latest = dev.latest || {};
+        var lastTs = latest.ts || (rows.length ? rows[rows.length - 1][0] : 0);
+        return {
+          device_id: dev.device_id,
+          summary: {
+            label: dev.label || dev.device_id,
+            points: rows.length,
+            distance_m: 0,
+            online: (now - lastTs) <= STALE_MS,
+            last_seen: lastTs,
+            age_ms: Math.max(0, now - lastTs)
+          },
+          latest: {
+            lat: latest.lat, lng: latest.lng, timestamp: lastTs,
+            speed_mps: latest.speed, bearing: latest.bearing, accuracy: latest.acc,
+            battery: latest.battery, provider: latest.provider,
+            activity: latest.activity, gnss: dev.gnss,
+            wifi: dev.wifi, cell: dev.cell
+          },
+          points: rows.map(function (r) {
+            return [r[0], r[1], r[2], r[3], r[4], r[5]];
+          }),
+          smooth: rows.map(function (r) {
+            return [r[0], r[1], r[2], r[3]];
+          })
+        };
+      })
+    };
+  }
+
+  function pollGithub() {
+    if (!state.running || state.inFlight) { return; }
+    state.inFlight = true;
+    var controller = new AbortController();
+    var timeout = setTimeout(function () { controller.abort(); }, HTTP_TIMEOUT_MS);
+    var started = performance.now();
+    // cache-buster: Pages sirve con caché, el parámetro fuerza contenido fresco
+    var url = githubFileUrl() + (state.ghPath.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now();
+
+    fetch(url, { method: 'GET', cache: 'no-store', signal: controller.signal })
+      .then(function (res) {
+        if (!res.ok) { throw new Error('HTTP ' + res.status + (res.status === 404 ? ' (¿ya publicó algún dispositivo?)' : '')); }
+        return res.json();
+      })
+      .then(function (file) {
+        if (!file || !Array.isArray(file.devices)) { throw new Error('fichero sin "devices"'); }
+        var shape = githubToApiShape(file);
+        state.failures = 0;
+        state.lastSync = Date.now();
+        state.lastLatency = Math.round(performance.now() - started);
+        ui.statSync.textContent = new Date(state.lastSync).toLocaleTimeString();
+        ui.statLatency.textContent = state.lastLatency + ' ms';
+        ingest(shape);
+        var stale = shape.devices.length && shape.devices.every(function (d) { return !d.summary.online; });
+        setStatus(stale ? 'wait' : 'ok',
+          'Pages · ' + shape.count + ' disp. · generado ' + new Date(shape.server_time).toLocaleTimeString());
+      })
+      .catch(function (err) {
+        state.failures++;
+        setStatus('err', (err && err.name === 'AbortError' ? 'timeout' : (err && err.message) || 'error') + ' · reintento ' + state.failures);
+      })
+      .finally(function () {
+        clearTimeout(timeout);
+        state.inFlight = false;
+        schedule();
+      });
+  }
+
+  /* ------------------------------------------------------------------ mapa / radar */
+
+  function initMap() {
+    if (!window.L || map) { return; }
+    map = L.map(ui.map, { zoomControl: true, worldCopyJump: true, preferCanvas: true }).setView([20, 0], 2);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, minZoom: 1, attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+  }
+
+  function applyView() {
+    var radarMode = state.view === 'radar' || !window.L;
+    ui.map.classList.toggle('off', radarMode);
+    canvas.classList.toggle('on', radarMode);
+    ui.view.value = radarMode && !window.L ? 'radar' : state.view;
+    if (!radarMode) { initMap(); if (map) { setTimeout(function () { map.invalidateSize(); }, 60); } }
+    resizeCanvas();
+    render();
+  }
+
+  function resizeCanvas() {
+    var dpr = window.devicePixelRatio || 1;
+    var w = canvas.clientWidth || ui.radar.clientWidth || 1;
+    var h = canvas.clientHeight || ui.radar.clientHeight || 1;
+    if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function drawRadar() {
+    var w = canvas.clientWidth || 1, h = canvas.clientHeight || 1;
+    ctx.clearRect(0, 0, w, h);
+    var all = [];
+    state.devices.forEach(function (d) { d.pts.forEach(function (p) { all.push(p); }); });
+    if (!all.length) {
+      ctx.fillStyle = '#8199ad'; ctx.font = '13px monospace'; ctx.textAlign = 'center';
+      ctx.fillText('sin datos de posición', w / 2, h / 2);
+      return;
+    }
+    var minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+    all.forEach(function (p) {
+      if (p.lat < minLat) { minLat = p.lat; } if (p.lat > maxLat) { maxLat = p.lat; }
+      if (p.lng < minLng) { minLng = p.lng; } if (p.lng > maxLng) { maxLng = p.lng; }
+    });
+    var pad = 40;
+    var latSpan = Math.max(maxLat - minLat, 0.0008), lngSpan = Math.max(maxLng - minLng, 0.0008);
+    var scale = Math.min((w - pad * 2) / lngSpan, (h - pad * 2) / latSpan);
+    var cx = (minLng + maxLng) / 2, cy = (minLat + maxLat) / 2;
+    var proj = function (p) { return [w / 2 + (p.lng - cx) * scale, h / 2 - (p.lat - cy) * scale]; };
+
+    ctx.strokeStyle = '#1b2632'; ctx.lineWidth = 1;
+    for (var r = 0; r < 6; r++) {
+      ctx.beginPath(); ctx.arc(w / 2, h / 2, Math.min(w, h) * 0.08 * (r + 1), 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.fillStyle = '#8199ad'; ctx.font = '11px monospace'; ctx.textAlign = 'left';
+    ctx.fillText('modo radar · 1 px ≈ ' + (1 / scale).toFixed(5) + '°', 10, 18);
+
+    state.devices.forEach(function (d) {
+      if (!d.pts.length) { return; }
+      ctx.strokeStyle = d.color; ctx.lineWidth = 2; ctx.beginPath();
+      d.pts.forEach(function (p, i) { var xy = proj(p); if (i) { ctx.lineTo(xy[0], xy[1]); } else { ctx.moveTo(xy[0], xy[1]); } });
+      ctx.stroke();
+      var last = d.pts[d.pts.length - 1], xy = proj(last);
+      ctx.fillStyle = d.color; ctx.beginPath(); ctx.arc(xy[0], xy[1], 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#dbe6f0'; ctx.font = '11px monospace';
+      ctx.fillText(d.id, xy[0] + 9, xy[1] + 4);   // canvas: sin riesgo de inyección HTML
+    });
+  }
+
+  /* ------------------------------------------------------------------ estado por dispositivo */
+
+  function ensureDevice(id) {
+    var d = state.devices.get(id);
+    if (d) { return d; }
+    d = {
+      id: id, color: 'hsl(' + hashHue(id) + ', 85%, 55%)', pts: [], seen: new Set(),
+      smoothPts: [], smoothSeen: new Set(),
+      latest: null, summary: null, polyline: null, marker: null, circle: null, smoothLine: null
+    };
+    state.devices.set(id, d);
+    refreshFollowOptions();
+    return d;
+  }
+
+  function deviceTooltip(d) {
+    var s = d.summary || {}, p = d.latest || {};
+    var gnss = p.gnss || {};
+    return '<b>' + esc(s.label || d.id) + '</b><br>' +
+      'vel ' + fmtSpeed(p.speed) + '<br>' +
+      '± ' + (p.acc !== null && p.acc !== undefined ? Math.round(p.acc) + ' m' : '—') +
+      (gnss.used !== undefined ? '<br>sat ' + gnss.used + '/' + gnss.visible + ' · snr ' + (gnss.snr_best || 0) : '') +
+      (p.activity ? '<br>' + esc(p.activity) : '');
+  }
+
+  function renderMap() {
+    if (!map) { return; }
+    state.devices.forEach(function (d) {
+      var latlngs = d.pts.map(function (p) { return [p.lat, p.lng]; });
+      if (!d.polyline) {
+        d.polyline = L.polyline(latlngs, { color: d.color, weight: 3, opacity: 0.9, lineJoin: 'round' }).addTo(map);
+      } else {
+        d.polyline.setLatLngs(latlngs);
+      }
+      // traza suavizada por el filtro del servidor (posición sin ruido de GPS)
+      var smoothLatLngs = d.smoothPts.map(function (p) { return [p.lat, p.lng]; });
+      if (!d.smoothLine) {
+        d.smoothLine = L.polyline(smoothLatLngs, { color: d.color, weight: 2, dashArray: '5,6', opacity: 0 }).addTo(map);
+      } else {
+        d.smoothLine.setLatLngs(smoothLatLngs);
+      }
+      var showSmooth = state.smooth && d.smoothPts.length > 1;
+      d.smoothLine.setStyle({ opacity: showSmooth ? 0.95 : 0 });
+      d.polyline.setStyle({ opacity: showSmooth ? 0.22 : 0.9 });
+      if (!d.latest) { return; }
+      var ll = [d.latest.lat, d.latest.lng];
+      // rumbo: el del GPS y, si falta, el magnético de la brújula
+      var heading = (d.latest.bearing !== null && d.latest.bearing !== undefined)
+        ? d.latest.bearing
+        : (d.latest.heading !== null && d.latest.heading !== undefined ? d.latest.heading : 0);
+      var html = '<div class="pulse" style="--c:' + d.color + '"></div>' +
+        '<div class="pin" style="--c:' + d.color + ';transform:rotate(' + heading + 'deg)"></div>';
+      var icon = L.divIcon({ className: 'dev-marker', html: html, iconSize: [26, 26], iconAnchor: [13, 13] });
+      if (!d.marker) {
+        d.marker = L.marker(ll, { icon: icon, title: d.id }).addTo(map);
+        d.marker.bindPopup(deviceTooltip(d));
+      } else {
+        d.marker.setLatLng(ll); d.marker.setIcon(icon);
+        if (d.marker.getPopup()) { d.marker.setPopupContent(deviceTooltip(d)); }
+      }
+      var acc = d.latest.acc;
+      if (acc && acc > 0) {
+        if (!d.circle) { d.circle = L.circle(ll, { radius: acc, color: d.color, weight: 1, fillOpacity: 0.08 }).addTo(map); }
+        else { d.circle.setLatLng(ll); d.circle.setRadius(acc); }
+      } else if (d.circle) { map.removeLayer(d.circle); d.circle = null; }
+    });
+  }
+
+  function renderSidebar() {
+    var scroller = ui.devices.parentElement || ui.devices;
+    var scroll = scroller.scrollTop;
+    var list = Array.from(state.devices.values()).sort(function (a, b) {
+      var la = (a.summary && a.summary.last_seen) || 0, lb = (b.summary && b.summary.last_seen) || 0;
+      return lb - la;
+    });
+    ui.hint.style.display = list.length ? 'none' : 'block';
+    ui.devices.innerHTML = list.map(function (d) {
+      var s = d.summary || {}, p = d.latest || {};
+      var age = s.age_ms !== undefined ? s.age_ms : Date.now() - (s.last_seen || Date.now());
+      var battery = (p.battery === null || p.battery === undefined) ? 0 : p.battery;
+      return '<div class="card' + (age > STALE_MS ? ' offline' : '') + '" data-id="' + esc(d.id) + '" style="border-left-color:' + d.color + '">' +
+        '<div class="top"><span class="id">' + esc(s.label || d.id) + '</span><span class="age">' + fmtAge(age) + ' atrás</span></div>' +
+        '<div class="sub">' + (p.lat !== undefined ? p.lat.toFixed(5) + ', ' + p.lng.toFixed(5) : 'sin posición') + '</div>' +
+        '<div class="kv">' +
+          '<span>vel <b>' + fmtSpeed(p.speed) + '</b></span>' +
+          '<span>± <b>' + (p.acc !== null && p.acc !== undefined ? Math.round(p.acc) + ' m' : '—') + '</b></span>' +
+          '<span>rec. <b>' + fmtDistance(s.distance_m || 0) + '</b></span>' +
+          '<span>máx <b>' + fmtSpeed(s.max_speed_mps) + '</b></span>' +
+          '<span>pts <b>' + (s.points || d.pts.length) + '</b></span>' +
+          '<span>prov <b>' + esc(shortProvider(p.provider)) + '</b></span>' +
+          '<span>act <b>' + esc(p.activity || '—') + '</b></span>' +
+          '<span>sat <b>' + (p.gnss && p.gnss.used !== undefined ? p.gnss.used + '/' + p.gnss.visible + (p.gnss.snr_best ? ' ' + Math.round(p.gnss.snr_best) + 'dB' : '') : '—') + '</b></span>' +
+          '<span>alt <b>' + fmtAltitude(p) + '</b></span>' +
+          '<span>±v <b>' + (p.vertAcc !== null && p.vertAcc !== undefined ? Math.round(p.vertAcc) + ' m' : '—') + '</b></span>' +
+          '<span>avg acc <b>' + (s.avg_accuracy_m !== null && s.avg_accuracy_m !== undefined ? s.avg_accuracy_m + ' m' : '—') + '</b></span>' +
+          '<span>red <b>' + esc((p.dataNetwork ? p.dataNetwork + ' ' : '') + (p.network || '—')) + '</b></span>' +
+          '<span>bruta <b>' + fmtDistance(s.raw_distance_m || 0) + '</b></span>' +
+          '<span>ruido <b>' + (s.noise_removed_m ? fmtDistance(s.noise_removed_m) : '0 m') + '</b></span>' +
+        '</div>' +
+        '<div class="bars"><span style="font-size:10px;color:#8199ad">bat</span><span class="bar"><i style="width:' + battery + '%"></i></span>' +
+        (p.mock ? '<span class="fake">MOCK</span>' : '') +
+        (p.outlier ? '<span class="fake">SALTO</span>' : '') +
+        (p.lowQuality ? '<span class="fake">±BAJA</span>' : '') + '</div>' +
+        (p.wifi && p.wifi.length ? '<div class="sub">wifi: ' + esc(p.wifi.slice(0, 2).map(function (w) { return (w.ssid || w.bssid || '?') + ' ' + (w.rssi !== undefined ? w.rssi : w.level) + 'dBm'; }).join(' · ')) + '</div>' : '') +
+        (p.cell && p.cell.length ? '<div class="sub">celda: ' + esc(p.cell.slice(0, 2).map(function (c) { return (c.type || '?') + ' cid=' + (c.cid || '?') + ' ' + (c.rsrp || c.dbm || '') + 'dBm'; }).join(' · ')) + '</div>' : '') +
+      '</div>';
+    }).join('');
+    scroller.scrollTop = scroll;
+
+    var points = 0, distance = 0, online = 0;
+    state.devices.forEach(function (d) {
+      points += d.pts.length;
+      distance += (d.summary && d.summary.distance_m) || 0;
+      if (d.summary && d.summary.online) { online++; }
+    });
+    ui.statDevices.textContent = state.devices.size;
+    ui.statOnline.textContent = online;
+    ui.statPoints.textContent = points;
+    ui.statDistance.textContent = fmtDistance(distance);
+  }
+
+  function render() {
+    if (state.view === 'radar' || !window.L) { drawRadar(); } else { renderMap(); }
+    renderSidebar();
+  }
+
+  function refreshFollowOptions() {
+    var current = ui.follow.value;
+    var ids = Array.from(state.devices.keys());
+    ui.follow.innerHTML = '<option value="">Sin seguimiento</option>' + ids.map(function (id) {
+      return '<option value="' + esc(id) + '">Seguir: ' + esc(id) + '</option>';
+    }).join('');
+    if (ids.indexOf(current) >= 0) { ui.follow.value = current; }
+  }
+
+  /* ------------------------------------------------------------------ ingesta */
+
+  function ingest(payload) {
+    var devices = payload.devices || [];
+    var newest = 0;
+    devices.forEach(function (dev) {
+      var d = ensureDevice(dev.device_id);
+      d.summary = dev.summary || null;
+      if (Array.isArray(dev.points)) {
+        dev.points.forEach(function (row) {
+          var ts = row[0];
+          if (d.seen.has(ts)) { return; }
+          d.seen.add(ts);
+          d.pts.push({ ts: ts, lat: row[1], lng: row[2], speed: row[3], bearing: row[4], acc: row[5] });
+          if (ts > newest) { newest = ts; }
+        });
+        if (dev.points.length) { d.pts.sort(function (a, b) { return a.ts - b.ts; }); }
+        while (d.pts.length > MAX_CLIENT_POINTS) { d.seen.delete(d.pts.shift().ts); }
+      }
+      if (Array.isArray(dev.smooth)) {
+        dev.smooth.forEach(function (row) {
+          var ts = row[0];
+          if (d.smoothSeen.has(ts)) { return; }
+          d.smoothSeen.add(ts);
+          d.smoothPts.push({ ts: ts, lat: row[1], lng: row[2], speed: row[3] });
+        });
+        if (dev.smooth.length) { d.smoothPts.sort(function (a, b) { return a.ts - b.ts; }); }
+        while (d.smoothPts.length > MAX_CLIENT_POINTS) { d.smoothSeen.delete(d.smoothPts.shift().ts); }
+      }
+      if (dev.latest) {
+        d.latest = {
+          lat: dev.latest.lat, lng: dev.latest.lng, ts: dev.latest.timestamp,
+          speed: dev.latest.speed_mps, bearing: dev.latest.bearing, acc: dev.latest.accuracy,
+          battery: dev.latest.battery, provider: dev.latest.provider, mock: dev.latest.mock,
+          wifi: dev.latest.wifi, cell: dev.latest.cell,
+          // alta precisión: GNSS, sensores y redes
+          altitude: dev.latest.altitude, altitudeBaro: dev.latest.altitude_baro,
+          vertAcc: dev.latest.vertical_accuracy, speedAcc: dev.latest.speed_accuracy,
+          heading: dev.latest.heading_magnetic, activity: dev.latest.activity,
+          gnss: dev.latest.gnss, network: dev.latest.network,
+          dataNetwork: dev.latest.data_network, operator: dev.latest.operator,
+          steps: dev.latest.steps, pressure: dev.latest.pressure_hpa,
+          altitudeFused: dev.latest.altitude_fused,
+          outlier: dev.latest.outlier, lowQuality: dev.latest.low_quality
+        };
+      } else if (!d.latest && d.pts.length) {
+        d.latest = d.pts[d.pts.length - 1];
+      }
+    });
+
+    var follow = ui.follow.value;
+    if (map && follow && state.devices.has(follow)) {
+      var t = state.devices.get(follow).latest;
+      if (t) { map.setView([t.lat, t.lng], Math.max(map.getZoom(), 15), { animate: true }); }
+    } else if (map && state.firstLoad && newest) {
+      var bounds = [];
+      state.devices.forEach(function (d) { if (d.latest) { bounds.push([d.latest.lat, d.latest.lng]); } });
+      if (bounds.length) { map.fitBounds(bounds, { padding: [60, 60], maxZoom: 16 }); }
+    }
+    if (newest) { state.firstLoad = false; }
+    render();
+  }
+
+  /* ------------------------------------------------------------------ sondeo */
+
+  function schedule() {
+    clearTimeout(state.timer);
+    var delay = state.failures
+      ? Math.min(60000, state.interval * Math.pow(2, Math.min(state.failures, 4)))
+      : state.interval;
+    state.timer = setTimeout(state.feed === 'github' ? pollGithub : poll, delay);
+  }
+
+  function poll() {
+    if (state.feed === 'github') { pollGithub(); return; }
+    if (!state.running || state.inFlight) { return; }
+    state.inFlight = true;
+    var controller = new AbortController();
+    var timeout = setTimeout(function () { controller.abort(); }, HTTP_TIMEOUT_MS);
+    var started = performance.now();
+    var url = apiBase() + FETCH_PATH;
+
+    fetch(url, { method: 'GET', headers: headers(), cache: 'no-store', mode: 'cors', signal: controller.signal })
+      .then(function (res) {
+        if (!res.ok) { throw new Error('HTTP ' + res.status); }
+        return res.json();
+      })
+      .then(function (data) {
+        if (!data || data.ok !== true) { throw new Error('respuesta inválida'); }
+        state.failures = 0;
+        state.lastSync = Date.now();
+        state.lastLatency = Math.round(performance.now() - started);
+        ui.statSync.textContent = new Date(state.lastSync).toLocaleTimeString();
+        ui.statLatency.textContent = state.lastLatency + ' ms';
+        ingest(data);
+        setStatus('ok', 'en vivo · ' + data.count + ' dispositivo(s)');
+      })
+      .catch(function (err) {
+        state.failures++;
+        setStatus('err', (err && err.name === 'AbortError' ? 'timeout' : (err && err.message) || 'error') + ' · reintento ' + state.failures);
+      })
+      .finally(function () {
+        clearTimeout(timeout);
+        state.inFlight = false;
+        schedule();
+      });
+  }
+
+  function onVisible() {
+    if (!document.hidden && state.running) { poll(); }
+  }
+
+  /* ------------------------------------------------------------------ eventos */
+
+  ui.base.value = state.base;
+  ui.token.value = state.token;
+  ui.interval.value = String(state.interval);
+  ui.view.value = state.view;
+
+  ui.base.addEventListener('change', function () {
+    state.base = ui.base.value.trim();
+    localStorage.setItem(LS.base, state.base);
+    state.failures = 0;
+    setStatus('wait', 'reconfigurado');
+    poll();
+  });
+  ui.token.addEventListener('change', function () {
+    state.token = ui.token.value.trim();
+    localStorage.setItem(LS.token, state.token);
+  });
+  ui.interval.addEventListener('change', function () {
+    state.interval = parseInt(ui.interval.value, 10) || 3000;
+    localStorage.setItem(LS.interval, state.interval);
+    schedule();
+  });
+  ui.view.addEventListener('change', function () {
+    state.view = ui.view.value;
+    localStorage.setItem(LS.view, state.view);
+    applyView();
+  });
+  ui.smooth.checked = state.smooth;
+  ui.smooth.addEventListener('change', function () {
+    state.smooth = ui.smooth.checked;
+    localStorage.setItem(LS.smooth, state.smooth ? '1' : '0');
+    render();
+  });
+  ui.feed.value = state.feed;
+  ui.feed.addEventListener('change', function () {
+    state.feed = ui.feed.value;
+    localStorage.setItem(LS.feed, state.feed);
+    state.failures = 0;
+    clearTimeout(state.timer);
+    setStatus('wait', state.feed === 'github' ? 'leyendo GitHub Pages…' : 'conectando a la API…');
+    poll();
+  });
+  ui.toggle.addEventListener('click', function () {
+    state.running = !state.running;
+    ui.toggle.textContent = state.running ? 'Pausar' : 'Reanudar';
+    if (state.running) { state.failures = 0; setStatus('wait', 'reanudado'); poll(); }
+    else { clearTimeout(state.timer); setStatus('wait', 'pausado'); }
+  });
+  ui.clear.addEventListener('click', function () {
+    state.devices.forEach(function (d) {
+      if (map) {
+        if (d.polyline) { map.removeLayer(d.polyline); }
+        if (d.smoothLine) { map.removeLayer(d.smoothLine); }
+        if (d.marker) { map.removeLayer(d.marker); }
+        if (d.circle) { map.removeLayer(d.circle); }
+      }
+    });
+    state.devices.clear();
+    state.firstLoad = true;
+    refreshFollowOptions();
+    render();
+  });
+  ui.devices.addEventListener('click', function (event) {
+    var card = event.target.closest('.card');
+    if (!card) { return; }
+    var d = state.devices.get(card.getAttribute('data-id'));
+    if (!d || !d.latest) { return; }
+    ui.follow.value = d.id;
+    if (map && state.view === 'map') { map.setView([d.latest.lat, d.latest.lng], 17, { animate: true }); }
+    if (d.marker) { d.marker.openPopup(); }
+  });
+  window.addEventListener('resize', function () { resizeCanvas(); if (map) { map.invalidateSize(); } render(); });
+  document.addEventListener('visibilitychange', onVisible);
+
+  if (window.TELEMETRY_INTERVAL) { state.interval = window.TELEMETRY_INTERVAL; ui.interval.value = String(state.interval); }
+
+  applyView();
+  setStatus('wait', 'conectando…');
+  poll();
+
+  window.__telemetry = { state: state, poll: poll, map: function () { return map; } };
+})();
+</script>
+</body>
+</html>

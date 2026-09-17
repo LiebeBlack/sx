@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icono vectorial: diana de localización (anillos + núcleo). Densidad independiente, API 21+. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillColor="#0B0F14"
+        android:pathData="M8,8h92v92h-92z" />
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M54,20a32,32 0 1,0 0.1,0z" />
+    <path
+        android:fillColor="#0B0F14"
+        android:pathData="M54,34a18,18 0 1,0 0.1,0z" />
+    <path
+        android:fillColor="#2ECC71"
+        android:pathData="M54,46a6,6 0 1,0 0.1,0z" />
+</vector>

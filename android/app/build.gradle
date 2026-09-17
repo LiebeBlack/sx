@@ -1,0 +1,63 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Firma opcional: si existe ../keystore.properties se usa; si no, el APK de release
+// se firma con la clave de depuración (nunca falla la compilación por falta de keystore).
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+def keystoreProperties = new Properties()
+def hasKeystore = keystorePropertiesFile.exists()
+if (hasKeystore) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+
+android {
+    namespace 'com.example.telemetry'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.example.telemetry'
+        minSdk 24
+        targetSdk 34
+        versionCode 3
+        versionName '1.2.0'
+    }
+
+    signingConfigs {
+        release {
+            if (hasKeystore) {
+                storeFile rootProject.file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+        }
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig hasKeystore ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    lint {
+        // Los avisos no bloquean la compilación del APK
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
+
+dependencies {
+    // Ninguna: org.json, HttpURLConnection, sensores, GNSS y telefonía son del SDK.
+}
