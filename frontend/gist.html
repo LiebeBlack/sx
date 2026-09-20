@@ -127,6 +127,7 @@
   <h1>Telemetría · Gist</h1>
   <span class="tag"><span id="pulse" class="pulse off"></span> <span id="linkState">esperando</span></span>
   <span class="tag" id="pointsTag">0 puntos</span>
+  <span class="tag" id="todayTag">hoy —</span>
   <span class="tag" id="ageTag">sin datos</span>
 </header>
 
@@ -175,6 +176,8 @@
         <dd id="diagLastError">—</dd>
         <dt>elementos del último lote</dt>
         <dd id="diagBatch">0</dd>
+        <dt>descartados por el contrato</dt>
+        <dd id="diagDropped">0</dd>
         <dt>elementos recibidos (total)</dt>
         <dd id="diagTotal">0</dd>
         <dt>ya conocidos (dedupe)</dt>
@@ -224,7 +227,7 @@
     </div>
   </section>
 
-  <footer id="footer">sondeo cada 3 s · cache-busting estricto · deduplicación por timestamp_ms</footer>
+  <footer id="footer">sondeo cada 3 s · cache-busting estricto · deduplicación por timestamp_ms · se descarta lo que no traiga coordenada e instante positivos</footer>
 </main>
 
 <script>
@@ -233,6 +236,9 @@
 
   var DEFAULT_URL = "https://gist.githubusercontent.com/LiebeBlack/e3541f64e432227a5a53f571c3bbc793/raw/data.json";
   var POLL_MS = 3000;
+  // Mismo umbral que el filtro del móvil y el visor principal: por encima de 90 m/s (324 km/h) un
+  // tramo no es un desplazamiento, es un salto de GPS.
+  var MAX_PLAUSIBLE_MPS = 90;
   var MAX_VIEW = 8000;
   var MAX_ROWS = 400;
   var STORAGE_KEY = "telemetria.gist.url";
@@ -248,6 +254,8 @@
     lastError: "",
     received: 0,
     duplicates: 0,
+    dropped: 0,        // descartados por el contrato (sin coordenada o sin instante positivo)
+    lastDropped: 0,
     lastBatch: 0,
     inFlight: false,   // un solo sondeo a la vez: el botón, la pestaña y el temporizador coinciden
     changed: [],
@@ -293,13 +301,20 @@
     var status = item.status && typeof item.status === "object" ? item.status : {};
 
     var lat = isFiniteNumber(location.latitude) ? location.latitude : (isFiniteNumber(location.lat) ? location.lat : NaN);
-    var lng = isFiniteNumber(location.longitude) ? location.longitude : (isFiniteNumber(location.lng) ? location.lng : NaN);
+    // El backend ya acepta `lon` como alias de `lng`, así que el visor también: un Gist editado a
+    // mano con `lon` no debe descartarse en silencio.
+    var lng = isFiniteNumber(location.longitude) ? location.longitude
+      : (isFiniteNumber(location.lng) ? location.lng : (isFiniteNumber(location.lon) ? location.lon : NaN));
     if (!isFinite(lat) || !isFinite(lng)) { return null; }
     if (lat < -90 || lat > 90 || lng < -180 || lng > 180) { return null; }
 
+    // El instante es la clave de la fusión y el contrato exige que sea positivo, así que un punto sin
+    // él se descarta en vez de recibir la hora actual (lo que además lo haría parecer recién
+    // capturado). Se acepta en segundos y se normaliza a milisegundos, igual que el backend.
     var ts = isFiniteNumber(telemetry.timestamp_ms) ? telemetry.timestamp_ms : NaN;
     if (!isFinite(ts)) { ts = isFiniteNumber(telemetry.timestamp) ? telemetry.timestamp : NaN; }
-    if (!isFinite(ts)) { ts = Date.now(); }
+    if (!isFinite(ts) || ts <= 0) { return null; }
+    if (ts < 1e12) { ts = ts * 1000; }
 
     return {
       ts: Math.round(ts),
@@ -348,10 +363,16 @@
       return null;
     }
     var out = [];
+    var dropped = 0;
     for (var i = 0; i < list.length; i++) {
       var point = normalize(list[i]);
-      if (point) { out.push(point); }
+      if (point) { out.push(point); } else { dropped++; }
     }
+    // El descarte se cuenta y se muestra en el diagnóstico: un fichero con doce objetos del que no
+    // se pinta ninguno es lo más confuso que puede pasar, y el motivo (sin coordenada o sin instante
+    // positivo) queda a la vista en lugar de dejar la pantalla en «0 puntos» sin explicación.
+    state.lastDropped = dropped;
+    state.dropped += dropped;
     return out;
   }
 
@@ -407,6 +428,57 @@
   function fmt(value, digits, suffix) {
     if (value === null || value === undefined || !isFinite(value)) { return "—"; }
     return Number(value).toFixed(digits === undefined ? 1 : digits) + (suffix || "");
+  }
+
+  /* ------------------------------------------------------------------ distancia y día
+   *
+   * Estas tres funciones están repetidas a propósito respecto a `frontend/index.html`: este visor
+   * promete ser **un solo fichero sin librerías**, así que no puede compartir código con el otro sin
+   * romper esa promesa. Las reglas son las mismas —posición suavizada cuando existe, el mismo umbral
+   * de salto— para que los dos visores den el mismo número.
+   */
+
+  /** Distancia entre dos coordenadas en metros (haversine, radio medio terrestre). */
+  function haversine(lat1, lng1, lat2, lng2) {
+    var radius = 6371008.8, rad = Math.PI / 180;
+    var dLat = (lat2 - lat1) * rad, dLng = (lng2 - lng1) * rad;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+      + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return 2 * radius * Math.asin(Math.min(1, Math.sqrt(a)));
+  }
+
+  /** Distancia recorrida por una traza, con la posición suavizada de cada punto cuando la trae. */
+  function distanceMeters(list) {
+    var total = 0, previous = null;
+    for (var i = 0; i < list.length; i++) {
+      var point = list[i];
+      var lat = point.smoothLat !== null ? point.smoothLat : point.lat;
+      var lng = point.smoothLng !== null ? point.smoothLng : point.lng;
+      if (previous) {
+        var meters = haversine(previous.lat, previous.lng, lat, lng);
+        var seconds = Math.abs(point.ts - previous.ts) / 1000;
+        if (seconds > 0 && meters / seconds <= MAX_PLAUSIBLE_MPS) { total += meters; }
+      }
+      previous = { lat: lat, lng: lng, ts: point.ts };
+    }
+    return total;
+  }
+
+  /** Día natural local de un instante, como texto ISO: se compara y se ordena como texto. */
+  function dayKeyOf(ms) {
+    var d = new Date(ms), pad = function (n) { return (n < 10 ? "0" : "") + n; };
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+  }
+
+  /** Metros de hoy: se mide la parte de la traza que cayó en el día, sin arrastrar el de ayer. */
+  function metersToday(list) {
+    var today = dayKeyOf(Date.now());
+    return distanceMeters(list.filter(function (point) { return dayKeyOf(point.ts) === today; }));
+  }
+
+  function fmtDistance(meters) {
+    if (!isFiniteNumber(meters)) { return "—"; }
+    return meters >= 1000 ? (meters / 1000).toFixed(2) + " km" : Math.round(meters) + " m";
   }
 
   function fmtTime(ms) {
@@ -546,6 +618,7 @@
       ctx.font = "20px ui-monospace, monospace";
       ctx.fillText("sin puntos todavía", 24, 42);
       $("trackInfo").textContent = "—";
+      $("todayTag").textContent = "hoy —";
       return;
     }
 
@@ -607,7 +680,9 @@
     ctx.fillStyle = "#800080";
     ctx.fillText("lng " + bounds.minLng.toFixed(5) + " … " + bounds.maxLng.toFixed(5), pad, height - 26);
 
-    $("trackInfo").textContent = list.length + " puntos · desde " + fmtTime(list[0].ts) + " hasta " + fmtTime(newest.ts);
+    $("trackInfo").textContent = list.length + " puntos · " + fmtDistance(distanceMeters(list))
+      + " recorridos · desde " + fmtTime(list[0].ts) + " hasta " + fmtTime(newest.ts);
+    $("todayTag").textContent = "hoy " + fmtDistance(metersToday(list));
   }
 
   function drawPolyline(ctx, list, smooth, toX, toY, color, width, dash) {
@@ -642,6 +717,8 @@
     $("diagLastError").textContent = state.lastError || "—";
     $("diagLastError").className = state.lastError ? "warn" : "";
     $("diagBatch").textContent = String(state.lastBatch);
+    $("diagDropped").textContent = state.dropped + (state.lastDropped ? " (último lote: " + state.lastDropped + ")" : "");
+    $("diagDropped").className = state.dropped ? "warn" : "";
     $("diagTotal").textContent = String(state.received);
     $("diagDupes").textContent = String(state.duplicates);
     $("diagUrl").textContent = state.url;
@@ -706,6 +783,12 @@
         throw new Error("respuesta no interpretable (se conserva la vista anterior)");
       }
       state.lastBatch = parsed.length;
+      if (!parsed.length) {
+        // Parseó pero no hay ni un punto utilizable: es un fallo que hay que decir, no una vista
+        // vacía que parece «todavía no hay datos».
+        throw new Error("el fichero no trae ningún punto válido" + (state.lastDropped
+          ? " (" + state.lastDropped + " descartado(s): sin coordenada o sin instante positivo)" : ""));
+      }
       var added = merge(parsed);
       state.lastOkAt = Date.now();
       state.lastError = "";

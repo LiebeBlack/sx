@@ -58,6 +58,7 @@
         android:icon="@drawable/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
+        android:theme="@style/AppTheme"
         android:usesCleartextTraffic="true">
 
         <activity
@@ -106,7 +107,12 @@
             </intent-filter>
         </receiver>
 
-        <!-- Arranque, actualización del paquete, desbloqueo y alarma del watchdog -->
+        <!--
+            Arranque, actualización del paquete, desbloqueo y alarma del watchdog, más los hitos que
+            deja un robo: el apagado y el modo avión. Los dos últimos solo se anotan (ver
+            WatchdogReceiver#recordCustodyEvent); no impiden nada, porque el sistema no se puede
+            impedir desde una app. La parada forzosa no llega como señal: mata el proceso.
+        -->
         <receiver
             android:name=".WatchdogReceiver"
             android:enabled="true"
@@ -116,6 +122,8 @@
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
                 <action android:name="android.intent.action.USER_PRESENT" />
+                <action android:name="android.intent.action.ACTION_SHUTDOWN" />
+                <action android:name="android.intent.action.AIRPLANE_MODE_CHANGED" />
             </intent-filter>
         </receiver>
     </application>

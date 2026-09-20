@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "server": {
+    "endpoint": "https://mi-servidor.ejemplo.com/api/location",
+    "api_key": ""
+  },
+  "device": {
+    "label": "Teléfono de campo"
+  },
+  "tracking": {
+    "interval_seconds": 5,
+    "distance_meters": 5,
+    "enabled": false
+  },
+  "github": {
+    "token": "",
+    "repo": "usuario/repositorio",
+    "branch": "main",
+    "path": "data/latest.json"
+  },
+  "gist": {
+    "id": "",
+    "file": "data.json"
+  }
+}

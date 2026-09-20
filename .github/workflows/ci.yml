@@ -9,21 +9,39 @@ on:
 permissions:
   contents: read
 
+# Un push encima de otro cancela el run anterior: dos pipelines del mismo commit no aportan nada y
+# mientras corren los dos el badge parpadea, que es justo cuando nadie se fía de él.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend:
     name: Backend y frontend (Python ${{ matrix.python }})
-    runs-on: ubuntu-latest
+    # Fijado y no 'ubuntu-latest' a propósito: el propio runner avisa de que ubuntu-latest migra a
+    # Ubuntu 26 el 19 de octubre de 2026, y aquí se apoyan rutas y paquetes del sistema (el SDK de
+    # Android, el JDK, node). Un cambio de imagen a mitad de un trabajo no debe decidir si la CI pasa.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         python: ["3.10", "3.12"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
+          # Sin caché, instalar Flask en cada run es medio minuto de red por job y por versión.
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
       - name: Dependencias
         run: pip install -r backend/requirements.txt
+      - name: Comprobar que node está disponible
+        # La prueba del visor (`tests/test_frontend_adapter.py`) se salta sin node, y ese salto
+        # silencioso convertiría una regresión del adaptador en un verde. Aquí se dice en voz alta
+        # antes de que pueda esconderse: si node desaparece del runner, esto falla primero.
+        run: node --version
       - name: Comprobación de sintaxis
         run: python -m compileall -q backend tools tests
       - name: Sintaxis del JavaScript del visualizador
@@ -35,10 +53,11 @@ jobs:
 
   android:
     name: APK de depuración
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
@@ -65,9 +84,13 @@ jobs:
           echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
           yes | "$CMDLINE/sdkmanager" --licenses > /dev/null || true
           "$CMDLINE/sdkmanager" --install "platforms;android-35" "build-tools;35.0.0"
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: "8.9"
+          # 'basic' y no el 'enhanced' que v6 pone por defecto: es la implementación de código
+          # abierto sobre la caché de GitHub Actions —la que ya está medida aquí, con el build de 23 s
+          # de la última ejecución—, y no manda metadatos de compilación a ningún servicio externo.
+          cache-provider: basic
       - name: Wrapper y compilación
         working-directory: android
         run: |
@@ -92,7 +115,7 @@ jobs:
           done
           echo "componentes del manifest intactos tras la ofuscación"
       - name: Subir APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: telemetria-apk
           path: |

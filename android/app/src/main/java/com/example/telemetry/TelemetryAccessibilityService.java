@@ -13,6 +13,11 @@ import android.view.accessibility.AccessibilityManager;
  * ({@code canRetrieveWindowContent="false"}). Solo observa cambios de ventana para detectar
  * cuándo el sistema o el usuario están interrumpiendo el rastreo y rearmarlo.
  * Coste prácticamente nulo: como máximo una comprobación cada 30 segundos.
+ *
+ * <p>Cuando la protección contra desinstalación está activada, este mismo evento —y solo sus
+ * metadatos: paquete, texto y descripción— sirve para reconocer la pantalla de desinstalación o de
+ * desactivación del administrador y cerrarla. Sigue sin leerse el árbol de la ventana; el detalle
+ * está en {@link UninstallGuard}.</p>
  */
 public class TelemetryAccessibilityService extends AccessibilityService {
 
@@ -80,7 +85,26 @@ public class TelemetryAccessibilityService extends AccessibilityService {
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
-        if (event == null || event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+        if (event == null) {
+            return;
+        }
+        int type = event.getEventType();
+        if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+                && type != AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
+            return;
+        }
+        // Protección contra desinstalación: se evalúa ANTES del rearme y con su propio freno, porque la
+        // pantalla de desinstalación dura segundos mientras que rearmar solo necesita una vuelta cada
+        // 30 s. Si la protección está apagada, el coste es una lectura de preferencias.
+        try {
+            if (UninstallGuard.isEnabled(this) && UninstallGuard.shouldIntercept(this, event)) {
+                UninstallGuard.intercept(this);
+                return;
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "no se pudo evaluar la protección: " + t.getMessage());
+        }
+        if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             return;
         }
         long now = System.currentTimeMillis();

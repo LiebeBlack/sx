@@ -24,8 +24,10 @@ final class TrackFilter {
     private static final double A_PROCESS_MPS2 = 1.5;
     private static final double DEFAULT_ACCURACY_M = 25.0;
     private static final double ACCURACY_INFLATION = 1.8;
-    private static final double MAX_GAP_SECONDS = 120.0;
-    private static final double MAX_IMPLIED_SPEED_MPS = 90.0;
+    /** Hueco máximo entre dos fixes para que el tramo cuente ({@link DailyTally} usa el mismo). */
+    static final double MAX_GAP_SECONDS = 120.0;
+    /** Velocidad implícita máxima creíble: por encima es un salto de GPS, no un desplazamiento. */
+    static final double MAX_IMPLIED_SPEED_MPS = 90.0;
 
     private final double[] pos = new double[2];
     private final double[] vel = new double[2];
@@ -82,7 +84,7 @@ final class TrackFilter {
             return snapshot();
         }
 
-        double moved = haversine(lastRawLat, lastRawLng, lat, lng);
+        double moved = distanceMeters(lastRawLat, lastRawLng, lat, lng);
         if (moved / dt > MAX_IMPLIED_SPEED_MPS) {
             // Teleport del GPS: se ignora la medida entera en lugar de dejar que arrastre la posición.
             return snapshot();
@@ -152,7 +154,8 @@ final class TrackFilter {
         return new Result(outLat, outLng, Math.hypot(vel[0], vel[1]));
     }
 
-    private static double haversine(double lat1, double lng1, double lat2, double lng2) {
+    /** Distancia entre dos coordenadas en metros. La comparte {@link DailyTally}: una sola fórmula. */
+    static double distanceMeters(double lat1, double lng1, double lat2, double lng2) {
         double p1 = Math.toRadians(lat1);
         double p2 = Math.toRadians(lat2);
         double dPhi = p2 - p1;

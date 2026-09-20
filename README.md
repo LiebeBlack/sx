@@ -16,6 +16,14 @@ funcionando si no están (el motor fusionado de Google y WorkManager).
 
 > 📋 **Guía completa de puesta en marcha de verdad**: [`docs/SETUP.md`](docs/SETUP.md) — token
 > fine-grained paso a paso, app, Pages, espejo con docker-compose, checklist y solución de problemas.
+>
+> ⚙️ **Configurar el móvil sin escribir campo a campo**: [`docs/CONFIGURACION.md`](docs/CONFIGURACION.md)
+> — qué significa cada clave, la plantilla lista (`config.ejemplo.json`) que la app carga sola desde
+> `Descargas/Telemetria/config.json`, y el código de seguridad de la pantalla. Incluye **§10: impedir la
+> desinstalación** —propietario del dispositivo más centinela de accesibilidad, con su salida de
+> emergencia, la tabla de **qué pasa con cada acción de mantenimiento** (reiniciar, apagar, modo avión,
+> parada forzosa, borrar datos, cambiar la hora), la **cadena de custodia** que queda en `error.json` y
+> lo que esa protección *no* hace—.
 
 | | Modo API en vivo | Modo GitHub directo | Modo Gist (BaaS) |
 |---|---|---|---|
@@ -27,8 +35,14 @@ funcionando si no están (el motor fusionado de Google y WorkManager).
 | Consumo GitHub | 0 | ~1 request/min por dispositivo | 2 requests por ciclo (GET + PATCH) |
 | Ideal para | seguimiento en tiempo real | demo táctica con repo propio | histórico acumulativo sin infraestructura |
 
-En ambos casos el visualizador es el mismo: elige la fuente en el desplegable
-**API en vivo / GitHub Pages (fichero)**.
+En los tres casos el visualizador es el mismo: elige la fuente en el desplegable
+**API en vivo / GitHub Pages (fichero) / Gist (histórico)**. Sin salir de la página la traza visible se
+descarga en **CSV** o en **GPX** (para mapas, relojes y análisis), el panel **distancia por día**
+resume la última semana —lo de hoy primero, con `hoy` también en la barra del pie y en la tarjeta de
+cada dispositivo—, el botón **Días** se lleva esa tabla completa en CSV y una vista concreta se
+comparte por URL —`…/frontend/?feed=gist&gist=<id>`, `?view=radar`, `?interval=5000`, `?follow=<id>`—. Los tokens
+**no** se aceptan por URL a propósito: una credencial en un enlace compartido o en el historial del
+navegador es una credencial filtrada.
 
 ### Modo Gist (GitHub como base de datos)
 
@@ -50,9 +64,9 @@ vivo. El token que necesitas para este modo solo requiere el permiso `Gists: rea
    (`data/latest.json` por defecto). Guarda e inicia el rastreo.
 3. La app escribe el fichero vía Contents API: fusión por `device_id`, reintento automático ante
    409 (sha obsoleto) y publicación como mucho cada 60 s. Activa **Settings → Pages → Deploy from
-   branch** en el repo: rama `main` y carpeta **`/ (root)`** — con `/docs` la raíz del sitio
-   responde 404, el visualizador no se publica y `data/latest.json` no se sirve (ver `docs/SETUP.md`,
-   Paso 4).
+   branch** en el repo: rama `main` y carpeta **`/ (root)`** — es la única que publica el
+   visualizador y `data/latest.json`; con `/docs` se publica solo la documentación (su portada ya
+   existe en `docs/index.html`) y el mapa se ve desde el backend (ver `docs/SETUP.md`, Paso 4).
 4. En el visualizador, elige la fuente **GitHub Pages (fichero)**. Desde la propia web de Pages la
    ruta por defecto ya es correcta; para otro repo escribe `https://usuario.github.io/repo` en el
    campo API.
@@ -68,8 +82,8 @@ limit y diff mínimo (estado visible en `/api/health → github_mirror`).
 backend/app.py                          API JSON: Kalman, altitud fusionada, integridad de datos
 backend/github_mirror.py                Espejo del estado a GitHub (Contents API)
 android/.../GithubPublisher.java        Publicación directa del móvil a GitHub (Wi-Fi o datos)
-frontend/index.html                     Visualizador Vanilla JS + Leaflet (OLED, auto-fetch 3 s, 2 trazas, 2 fuentes)
-frontend/gist.html                      Visor del canal Gist (autónomo, sin librerías, dedupe por timestamp_ms)
+frontend/index.html                     Visualizador Vanilla JS + Leaflet (OLED, 3 fuentes, 2 trazas, radar sin CDN, CSV/GPX, distancia por día, URL compartible)
+frontend/gist.html                      Visor del canal Gist (autónomo, sin librerías, histórico, distancia y día, diagnóstico del enlace; enlazado desde el visor principal)
 index.html                              Portada del sitio de Pages: redirige al visualizador en vivo
 tools/simulate.py                       Generador de trafico sintetico (--noisy)
 tools/check_frontend.py                 Valida el JS embebido de los dos visores con node --check
@@ -77,8 +91,15 @@ tools/gist_schema.py                    Contrato del canal Gist: validador y fus
 tests/test_api.py · tests/test_fusion.py  Tests de endpoints, filtros y fusion
 tests/test_gist_schema.py               Tests del contrato y de las reglas de fusión del Gist
 tests/test_workflow.py                  Sintaxis de los workflows (un YAML inválido no ejecuta nada)
+tests/test_frontend_adapter.py          Contrato del Gist dentro del visor, ejecutando sus funciones con node
  docs/API.md                            Referencia de endpoints con ejemplos curl
  docs/SETUP.md                          Puesta en producción completa (token, Pages, espejo)
+ docs/CONFIGURACION.md                  Configuración del móvil campo por campo + plantilla JSON
+config.ejemplo.json                    Plantilla lista para rellenar y copiar al teléfono
+ android/.../AppConfig.java             Dueño único de la configuración: exportar, importar y aplicar
+ android/.../SecurityGate.java          Código de seguridad de la pantalla (SHA-256 + sal, 5 intentos)
+ android/.../UninstallGuard.java         Protección contra desinstalación (propietario + centinela)
+ docs/index.html                        Portada del sitio de Pages (sirve para /docs y para /)
 scripts/dev.sh                          install | run | test | simulate | apk | lint
 Dockerfile · docker-compose.yml         Despliegue en contenedor con volumen /data
 .github/workflows/ci.yml                CI: tests del backend + build del APK
@@ -555,6 +576,14 @@ La CI (`.github/workflows/ci.yml`) ejecuta esos tests en Python 3.10 y 3.12 y co
 depuración **y de release** (para validar las reglas de ofuscación y comprobar con `grep` sobre el dex
 que los componentes que el sistema instancia por nombre sobrevivieron a R8), subiendo ambos como
 artefacto. Los tests usan un almacén temporal: **nunca** escriben en `telemetry_store.jsonl`.
+
+Antes de los tests hay un paso que comprueba que **`node` existe**: la prueba del visor se salta sin
+él, y ese salto silencioso convertiría una regresión del adaptador en un verde. El runner está fijado
+en `ubuntu-24.04` —GitHub avisa de que `ubuntu-latest` migra a Ubuntu 26 en octubre de 2026—, cada job
+tiene tiempo máximo, un push nuevo **cancela** el run anterior y el pip de Flask se cachea. Las cinco
+acciones van en su versión mayor más reciente, verificada contra el `action.yml` de cada una antes de
+subirla: una acción que corre sobre un Node retirado **avisa en vez de fallar**, y un aviso que se
+repite acaba ignorándose.
 
 Las reglas del canal Gist se prueban aquí porque en el móvil no se pueden ejecutar desde CI: fusión
 por `timestamp_ms`, empate a favor del punto local, orden cronológico y doble recorte (número de

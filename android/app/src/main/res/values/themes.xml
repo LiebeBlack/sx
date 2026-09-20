@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Tema de la aplicación.
+
+  Hereda de Material (API 21+, y el mínimo del proyecto es 24) y no añade ninguna librería: los
+  colores salen de aquí, así que la pantalla se ve coherente sin pintar cada control a mano.
+
+  La paleta es la del resto del proyecto: fondo negro puro OLED y acentos cian/púrpura.
+-->
+<resources>
+
+    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:colorAccent">#00FFFF</item>
+        <item name="android:colorPrimary">#000000</item>
+        <item name="android:colorPrimaryDark">#000000</item>
+        <item name="android:colorControlActivated">#00FFFF</item>
+        <item name="android:colorControlNormal">#00B3B3</item>
+        <item name="android:colorControlHighlight">#3300FFFF</item>
+        <item name="android:textColorPrimary">#E6FEFF</item>
+        <item name="android:textColorSecondary">#8FD9E0</item>
+        <item name="android:textColorHint">#5A8F96</item>
+        <item name="android:statusBarColor">#000000</item>
+        <item name="android:navigationBarColor">#000000</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+
+</resources>

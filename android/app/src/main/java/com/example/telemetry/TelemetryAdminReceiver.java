@@ -47,6 +47,15 @@ public class TelemetryAdminReceiver extends DeviceAdminReceiver {
     public void onDisabled(Context context, Intent intent) {
         super.onDisabled(context, intent);
         Log.w(TAG, "administrador desactivado");
+        // Desactivar el administrador es el primer paso de quien intenta desinstalar la app, y sin ser
+        // propietario del dispositivo no se puede impedir: queda registrado para que se vea en el panel
+        // y en `error.json` del teléfono, en lugar de pasar desapercibido.
+        try {
+            ErrorLogger.record("TelemetryAdminReceiver",
+                    "el administrador de dispositivo se ha desactivado desde los ajustes", null);
+        } catch (Throwable t) {
+            Log.w(TAG, "no se pudo registrar la desactivación: " + t.getMessage());
+        }
         rearm(context, false);
     }
 
@@ -68,6 +77,9 @@ public class TelemetryAdminReceiver extends DeviceAdminReceiver {
 
     @Override
     public CharSequence onDisableRequested(Context context, Intent intent) {
-        return "Desactivar el administrador reduce la persistencia del rastreo de telemetría.";
+        return "Desactivar el administrador reduce la persistencia del rastreo de telemetría"
+                + (UninstallGuard.isEnabled(context)
+                    ? " y queda registrado: la protección contra desinstalación está activada."
+                    : ".");
     }
 }

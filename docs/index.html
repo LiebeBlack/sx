@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Telemetría y geolocalización punto a punto</title>
+<!--
+  Portada del sitio cuando GitHub Pages publica la carpeta `/docs`.
+
+  Con la carpeta en `/ (root)` la raíz del dominio la sirve el `index.html` de la raíz del
+  repositorio (que redirige al visualizador en vivo) y esta portada se sigue publicando, pero en
+  `…/docs/`. Es decir: funciona con las dos configuraciones.
+
+  Sin JavaScript y sin dependencias externas, como el resto del proyecto.
+-->
+<style>
+  :root {
+    --cyan: #00ffff;
+    --purple: #800080;
+    --cyan-dim: rgba(0, 255, 255, 0.55);
+    --cyan-faint: rgba(0, 255, 255, 0.14);
+    --bg: #000000;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--cyan);
+    font: 14px/1.55 ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 62rem; margin: 0 auto; padding: 28px 18px 60px; }
+  header { border-bottom: 1px solid var(--purple); padding-bottom: 14px; margin-bottom: 22px; }
+  h1 { font-size: 17px; letter-spacing: 0.18em; text-transform: uppercase; margin: 0 0 8px; }
+  p.lead { margin: 0; color: var(--cyan-dim); }
+  h2 {
+    font-size: 13px; letter-spacing: 0.16em; text-transform: uppercase;
+    border-bottom: 1px solid var(--cyan-faint); padding-bottom: 6px; margin: 30px 0 12px;
+  }
+  a { color: var(--cyan); }
+  .cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+  .card {
+    display: block; border: 1px solid var(--purple); padding: 14px 16px;
+    text-decoration: none; background: #000;
+  }
+  .card:hover, .card:focus { border-color: var(--cyan); }
+  .card strong { display: block; letter-spacing: 0.08em; text-transform: uppercase; font-size: 12px; }
+  .card span { display: block; margin-top: 6px; color: var(--cyan-dim); font-size: 12px; }
+  code {
+    color: var(--cyan-dim); background: rgba(0, 255, 255, 0.06);
+    padding: 1px 5px; font: inherit;
+  }
+  ul { padding-left: 18px; }
+  li { margin: 7px 0; }
+  footer {
+    margin-top: 34px; border-top: 1px solid var(--purple); padding-top: 12px;
+    color: var(--purple); font-size: 12px;
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Telemetría · punto a punto</h1>
+    <p class="lead">Cliente Android nativo, backend Flask y visualizador en Vanilla JS. Sin
+    frameworks pesados, pensado para consumir la mínima batería y no perder ni un punto.</p>
+  </header>
+
+  <h2>Documentación</h2>
+  <div class="cards">
+    <a class="card" href="SETUP.html">
+      <strong>Puesta en marcha</strong>
+      <span>Permisos, token, Pages, contenedor y checklist de instalación en el móvil.</span>
+    </a>
+    <a class="card" href="API.html">
+      <strong>API del backend</strong>
+      <span>Ingesta por lotes, lecturas compactas, filtros y borrado por dispositivo.</span>
+    </a>
+    <a class="card" href="CONFIGURACION.html">
+      <strong>Configurar el móvil</strong>
+      <span>Cada clave explicada, la plantilla JSON que la app carga sola y el código de seguridad.</span>
+    </a>
+    <a class="card" href="https://github.com/LiebeBlack/sx">
+      <strong>Repositorio</strong>
+      <span>Código, historial de compilaciones y arquitectura completa.</span>
+    </a>
+  </div>
+
+  <h2>Mapa en vivo</h2>
+  <p>El visualizador está en <code>frontend/index.html</code> y hay dos formas de verlo:</p>
+  <ul>
+    <li><strong>Servido por el backend</strong>: <code>python backend/app.py</code> o
+      <code>docker compose up --build -d</code>, y abre <code>http://localhost:8000/</code>.
+      Funciona siempre y no depende de Pages.</li>
+    <li><strong>Publicado en Pages</strong>: solo si la carpeta de publicación es
+      <code>/ (root)</code> (Settings → Pages). Entonces la raíz del sitio redirige al visor y el
+      visor autónomo del canal Gist queda en <code>…/frontend/gist.html</code>.</li>
+  </ul>
+  <p>Este sitio publica la carpeta <code>/docs</code>, así que sirve la documentación y no el mapa.
+  El visor del canal Gist —lectura cada 3 s con <em>cache-busting</em> y deduplicación por
+  <code>timestamp_ms</code>— vive en <code>frontend/gist.html</code>, dentro del repositorio.</p>
+
+  <h2>Configurar en un minuto</h2>
+  <p>La app lee <code>Descargas/Telemetria/config.json</code> al abrirse y aplica lo que traiga, sin
+  tocar un solo campo. La plantilla está en <code>config.ejemplo.json</code> y el significado de cada
+  clave, en <a href="CONFIGURACION.html">Configurar el móvil</a>. Las claves que se dejen fuera
+  conservan su valor y lo que no se entienda se avisa con el motivo, nunca en silencio.</p>
+
+  <h2>Estado de la compilación</h2>
+  <p>
+    <a href="https://github.com/LiebeBlack/sx/actions/workflows/ci.yml">
+      <img src="https://github.com/LiebeBlack/sx/actions/workflows/ci.yml/badge.svg"
+           alt="Estado de la integración continua">
+    </a>
+  </p>
+  <p>La CI compila el APK de depuración y el release ofuscado con R8, comprueba que los componentes
+  que el sistema instancia por nombre sobreviven a la ofuscación, y ejecuta la suite del backend en
+  Python 3.10 y 3.12.</p>
+
+  <footer>Telemetría y geolocalización punto a punto · documentación servida desde <code>/docs</code></footer>
+</main>
+</body>
+</html>

@@ -124,6 +124,8 @@ public class LocationTrackerService extends Service implements LocationListener 
 
     private LocationManager locationManager;
     private TelemetryClient client;
+    /** Aviso ya dado de que no hay posición por culpa del sistema: se rearma al volver la primera. */
+    private boolean noFixReported = false;
     private GithubPublisher publisher;
     private SensorFusion sensorFusion;
     private GnssMonitor gnssMonitor;
@@ -527,6 +529,51 @@ public class LocationTrackerService extends Service implements LocationListener 
         }
     }
 
+    /**
+     * Anota, una sola vez por episodio, que la ausencia de posición es del sistema y no del GPS.
+     *
+     * <p>Son justo las dos cosas que se tocan para apagar un rastreador sin desinstalarlo: apagar la
+     * ubicación y revocar el permiso. En ambos casos el rastreo sigue en pie y los puntos quedan en
+     * cola, así que lo único que se pierde es el tiempo —y por eso interesa saber cuándo empezó.</p>
+     */
+    private void reportSystemLocationReason() {
+        if (noFixReported) {
+            return;
+        }
+        String reason = systemLocationReason();
+        if (reason == null) {
+            return;   // GPS todavía dormido: normal, no hay nada que anotar
+        }
+        noFixReported = true;
+        ErrorLogger.record("LocationTrackerService", reason
+                + " con el rastreo activo: los puntos quedan en cola hasta que vuelva", null);
+    }
+
+    /**
+     * La causa, si es del sistema, de que no haya ninguna posición.
+     *
+     * <p>{@code checkCallingOrSelfPermission} y no {@code checkSelfPermission}: existe desde la API 1,
+     * así que no hace falta una guarda de versión para preguntar lo mismo.</p>
+     *
+     * @return el motivo, o {@code null} si es un arranque normal de un GPS que aún no ha dado señal
+     */
+    private String systemLocationReason() {
+        try {
+            if (locationManager != null
+                    && !locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+                    && !locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                return "la ubicación del sistema está apagada";
+            }
+            if (checkCallingOrSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                    != PackageManager.PERMISSION_GRANTED) {
+                return "el permiso de ubicación está revocado";
+            }
+        } catch (Throwable t) {
+            return null;
+        }
+        return null;
+    }
+
     private Location bestLastKnown() {
         Location best = null;
         if (locationManager == null) {
@@ -553,6 +600,10 @@ public class LocationTrackerService extends Service implements LocationListener 
             if (System.currentTimeMillis() - lastFreshFixAt > FRESH_FIX_AFTER_MS) {
                 requestFreshFixes();
             }
+            // Si la causa es del sistema —la ubicación apagada, el permiso revocado— se anota UNA vez:
+            // eso no es el arranque normal de un GPS dormido, es información de custodia, y repetirla
+            // cada latido llenaría el registro. Vuelve a armarse en cuanto llega una posición.
+            reportSystemLocationReason();
             // Sin posición es justo el caso en el que una distancia de interiores aporta algo.
             maybeRange(-1f);
             lastSummary = "sin fixes disponibles · cola=" + client.queued();
@@ -616,8 +667,12 @@ public class LocationTrackerService extends Service implements LocationListener 
         lastSentLocation = location;
         lastSentMonotonicMs = monotonicMs;
         lastSentAccuracy = location.hasAccuracy() ? location.getAccuracy() : -1f;
+        noFixReported = false;   // hay posición: si vuelve a faltar, se vuelve a avisar
         maybeRange(lastSentAccuracy);
         Watchdog.beat(this);
+        // Medida del día: se anota aquí, donde el punto ya pasó todos los filtros, así que el total
+        // diario cuenta exactamente los mismos puntos que se publican por los tres canales.
+        DailyTally.record(this, point);
         notifyProgress(point);
         client.send(point);
         // difusión directa a GitHub (opcional): funciona incluso sin servidor propio
@@ -647,8 +702,9 @@ public class LocationTrackerService extends Service implements LocationListener 
         int accuracy = (int) Math.round(point.optDouble("accuracy", -1.0));
         int used = (gnssMonitor != null && gnssMonitor.isFresh()) ? gnssMonitor.usedInFix() : -1;
         String activity = point.optString("activity", "");
-        lastSummary = String.format(Locale.US, "±%d m · sat %d · %s · cola %d",
-                accuracy, used, activity.isEmpty() ? "—" : activity, client.queued());
+        lastSummary = String.format(Locale.US, "±%d m · sat %d · %s · cola %d · hoy %s",
+                accuracy, used, activity.isEmpty() ? "—" : activity, client.queued(),
+                DailyTally.todayShort(this));
         updateNotification(lastSummary);
     }
 

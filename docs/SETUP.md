@@ -103,19 +103,23 @@ coordenadas (se crea en la primera publicación, ~1 min tras iniciar el rastreo)
 
 1. En el repo: **Settings → Pages** (barra lateral).
 2. En **Build and deployment → Source**: **Deploy from a branch**.
-3. **Branch**: `main` y carpeta **`/ (root)`** → **Save**.
+3. **Branch**: `main` y la carpeta de publicación → **Save**. Las dos opciones funcionan, pero
+   publican cosas distintas:
 
-> **La carpeta `/docs` no sirve, y es el fallo más fácil de cometer.** GitHub Pages solo ofrece
-> `/ (root)` o `/docs`. Con `/docs` el sitio publica *únicamente* esa carpeta: no hay `index.html`
-> en ella, así que la raíz del dominio responde **404** con el mensaje «For root URLs you must
-> provide an index.html»; además el visualizador de `frontend/` no existe en el sitio y
-> `data/latest.json` tampoco se sirve, con lo que la fuente **GitHub Pages (fichero)** se queda sin
-> datos.
->
-> Con `/ (root)` funciona todo: la raíz la sirve el `index.html` que hay en la raíz del repositorio
-> —redirige al visualizador en vivo y deja a un clic el visor autónomo de `frontend/gist.html`—, el
-> fichero de datos queda en `https://TU_USUARIO.github.io/REPO/data/latest.json` y la documentación
-> se renderiza en `…/docs/API.html` y `…/docs/SETUP.html`.
+   - **`/ (root)`** — *recomendada*: publica todo. La raíz la sirve el `index.html` de la raíz del
+     repositorio, que redirige al visualizador en vivo; el visor autónomo queda en
+     `…/frontend/gist.html`, el fichero de datos en
+     `https://TU_USUARIO.github.io/REPO/data/latest.json`, y la documentación en `…/docs/API.html` y
+     `…/docs/SETUP.html`.
+   - **`/docs`** — publica **solo** la documentación, con la portada de `docs/index.html`
+     (`…/API.html`, `…/SETUP.html`). El visualizador y `data/latest.json` **no** se publican: con
+     esta carpeta, la fuente «GitHub Pages (fichero)» del visor se queda sin datos y el mapa en vivo
+     se ve desde el backend (`docker compose up --build -d` → `http://localhost:8000/`).
+
+> **El fallo fácil de cometer era dejar `/docs` sin portada.** La raíz del dominio respondía **404**
+> con el mensaje «For root URLs you must provide an index.html» porque la carpeta publicada no tenía
+> `index.html`; ya lo tiene, así que las dos configuraciones muestran un sitio en pie y lo único que
+> cambia es cuánto publican.
 4. Espera ~1 minuto. En **Settings → Pages** aparecerá la URL pública:
    `https://TU_USUARIO.github.io/telemetria/`.
 
@@ -127,8 +131,10 @@ coordenadas (se crea en la primera publicación, ~1 min tras iniciar el rastreo)
 
 ## Paso 5 · Abrir la web y elegir la fuente GitHub
 
-1. Abre `https://TU_USUARIO.github.io/telemetria/`: la raíz del sitio redirige al visualizador en
-   vivo (el visor autónomo del canal Gist está en `…/frontend/gist.html`).
+1. Abre `https://TU_USUARIO.github.io/telemetria/`. Con la carpeta `/ (root)` la raíz redirige al
+   visualizador en vivo y el visor autónomo del canal Gist está en `…/frontend/gist.html`; con la
+   carpeta `/docs` la raíz muestra la portada de la documentación, y el mapa se ve desde el backend
+   (`http://localhost:8000/`).
 2. En el desplegable de fuente, cambia **API en vivo** por **GitHub Pages (fichero)**.
    - Desde el propio dominio de Pages la ruta por defecto ya es correcta (deduce
      `/<repo>/data/latest.json` de la URL actual): cero configuración, cero CORS.
@@ -261,7 +267,11 @@ python app.py            # producción: gunicorn -w 1 -b 0.0.0.0:8000 app:app
 3. En la app, sección **GitHub Gist**: pega el token en el campo de token de arriba, el **ID** (o la
    URL completa del gist, se normaliza sola) y deja `data.json`. **Guardar** e **Iniciar**.
 4. Publica `frontend/gist.html` donde quieras (o ábrelo en local): sondea cada 3 s la URL cruda del
-   gist y dibuja el histórico. La URL se puede cambiar en el propio visor y queda guardada.
+   gist y dibuja el histórico, con la tabla de puntos y el diagnóstico del enlace. La URL se puede
+   cambiar en el propio visor y queda guardada. El **visor principal** lee el mismo Gist: elige la
+   fuente «Gist (histórico)» y pega el ID, o entra directamente con
+   `…/frontend/?feed=gist&gist=<id>` — así el mapa, el radar y las dos trazas funcionan también sin
+   backend ni repositorio.
 5. Comprueba en el panel de la app que aparece `Gist: ok · N/500 puntos …` y `WorkManager (gist)`.
    Si sale `pendientes`, hay red de por medio: el ciclo siguiente manda todo lo acumulado.
 
@@ -299,6 +309,7 @@ móvil(s) Android ──POST /api/location──▶ backend (Flask, Kalman + int
       └── Gists API (GET + PATCH) ──▶ gist (histórico) ──raw_url──▶ gist.html (3 s)
 ```
 
-Referencias cruzadas: `docs/API.md` (endpoints del backend), `README.md` §«Tres modos de
+Referencias cruzadas: `docs/API.md` (endpoints del backend), `docs/CONFIGURACION.md` (rellenar la
+configuración del móvil y cargarla de una vez con un JSON), `README.md` §«Tres modos de
 producción» y §2–3 (frontend y app), `backend/github_mirror.py` (espejo),
 `android/.../GithubPublisher.java` (publicación directa).

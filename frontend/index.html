@@ -21,7 +21,9 @@
   h1{font-size:14px;margin:0 8px 0 0;letter-spacing:.5px;font-weight:600;white-space:nowrap}
   h1 span{color:var(--acc);text-shadow:0 0 12px rgba(0,229,255,.55)}
   label{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.6px}
-  input,select,button{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:inherit;font-size:12px;outline:none}
+  input,select,button,a.btn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:inherit;font-size:12px;outline:none}
+  a.btn{text-decoration:none;cursor:pointer;transition:.15s}
+  a.btn:hover{border-color:var(--acc)}
   input:focus,select:focus{border-color:var(--acc);box-shadow:0 0 0 1px rgba(0,229,255,.28)}
   input[type=text]{min-width:150px}
   input[type=checkbox]{width:auto;padding:0;margin:0 4px 0 0;vertical-align:-1px;accent-color:var(--acc)}
@@ -61,6 +63,13 @@
   .bar{height:6px;background:#141419;border-radius:3px;overflow:hidden;flex:1}
   .bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--acc),var(--acc2))}
   .sub{font-size:11px;color:var(--dim);font-family:var(--mono);word-break:break-all}
+  #daily{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+  #daily h2{display:flex;justify-content:space-between;gap:8px;margin:0 0 6px;font-size:11px;letter-spacing:.08em;color:var(--dim);font-weight:600}
+  #daily h2 span{color:var(--acc);letter-spacing:0}
+  #daily .day{display:grid;grid-template-columns:44px 1fr 68px 52px;gap:8px;align-items:center;font-size:11px;font-family:var(--mono);color:var(--dim);margin-top:3px}
+  #daily .day.now{color:var(--txt)}
+  #daily .day .km{color:var(--txt);text-align:right}
+  #daily .day .pts{text-align:right}
   .fake{color:var(--warn);font-size:10px;border:1px solid var(--warn);border-radius:4px;padding:0 4px}
   footer{display:flex;flex-wrap:wrap;gap:14px;padding:6px 12px;background:var(--panel);border-top:1px solid var(--line);font-size:11px;color:var(--dim);font-family:var(--mono)}
   footer b{color:var(--txt)}
@@ -78,11 +87,16 @@
   <select id="feedSel">
     <option value="api">API en vivo</option>
     <option value="github">GitHub Pages (fichero)</option>
+    <option value="gist">Gist (histórico)</option>
   </select>
   <label for="apiBase">API</label>
   <input id="apiBase" type="text" placeholder="https://mi-servidor.ejemplo.com  (vacío = mismo origen)" spellcheck="false">
   <label for="apiToken">Token</label>
   <input id="apiToken" type="text" placeholder="X-Api-Key" spellcheck="false" style="width:120px">
+  <label for="ghPathInput" id="ghPathLabel" hidden>Fichero</label>
+  <input id="ghPathInput" type="text" placeholder="data/latest.json" spellcheck="false" style="width:170px" hidden>
+  <label for="gistId" id="gistLabel" hidden>Gist</label>
+  <input id="gistId" type="text" placeholder="ID o URL raw del gist" spellcheck="false" style="width:230px" hidden>
   <label for="intervalSel">Intervalo</label>
   <select id="intervalSel">
     <option value="1000">1 s</option>
@@ -97,6 +111,10 @@
   <select id="followSel"><option value="">Sin seguimiento</option></select>
   <label class="check" for="rawToggle"><input type="checkbox" id="rawToggle"> bruta</label>
   <span class="legend" title="El visualizador dibuja siempre las dos trazas del mismo recorrido"><i class="raw"></i>bruta<i class="flt"></i>filtrada</span>
+  <button id="csvBtn" title="Descargar en CSV la traza que está en pantalla">CSV</button>
+  <button id="gpxBtn" title="Descargar en GPX la traza que está en pantalla (mapas, relojes, análisis)">GPX</button>
+  <button id="daysBtn" title="Descargar en CSV la distancia recorrida cada día, de todo el histórico cargado">Días</button>
+  <a class="btn" id="standaloneLink" href="gist.html" title="Visor autónomo del canal Gist: un solo fichero, sin librerías externas. Es el que sigue funcionando si el CDN del mapa no carga">Solo Gist</a>
   <button id="toggleBtn" class="primary">Pausar</button>
   <button id="clearBtn" class="danger" title="Vacía el historial local del navegador">Limpiar</button>
   <span id="statusPill" class="pill wait"><i class="dot"></i><span id="statusText">iniciando…</span></span>
@@ -108,6 +126,7 @@
     <canvas id="radar"></canvas>
   </div>
   <aside>
+    <div id="daily" hidden><h2>DISTANCIA POR DÍA<span id="dailyTotal"></span></h2><div id="dailyRows"></div></div>
     <div id="devices"></div>
     <div class="sub" id="emptyHint">Esperando telemetría…</div>
   </aside>
@@ -118,6 +137,7 @@
   <span>online <b id="statOnline">0</b></span>
   <span>puntos <b id="statPoints">0</b></span>
   <span>recorrido <b id="statDistance">0 m</b></span>
+  <span title="Lo recorrido hoy, por día natural del navegador">hoy <b id="statToday">0 m</b></span>
   <span>última sync <b id="statSync">—</b></span>
   <span>latencia <b id="statLatency">—</b></span>
 </footer>
@@ -127,13 +147,15 @@
 (function () {
   'use strict';
 
-  var LS = { base: 'telemetry.base', token: 'telemetry.token', interval: 'telemetry.interval', view: 'telemetry.view', raw: 'telemetry.raw', feed: 'telemetry.feed', ghPath: 'telemetry.ghpath' };
+  var LS = { base: 'telemetry.base', token: 'telemetry.token', interval: 'telemetry.interval', view: 'telemetry.view', raw: 'telemetry.raw', feed: 'telemetry.feed', ghPath: 'telemetry.ghpath', gist: 'telemetry.gist' };
   var POLL_LIMIT = 300;          // puntos por dispositivo y por sondeo
   var MAX_CLIENT_POINTS = 2000;  // retención local
   var STALE_MS = 60000;          // dispositivo considerado offline
   var HTTP_TIMEOUT_MS = 8000;
   var RAW_COLOR = '#5c6b78';     // ruta bruta: gris neutro, así el neón identifica la filtrada
   var SMOOTH_NEAR_DEG = 0.01;    // ~1 km: un punto suavizado no puede alejarse más de su medida
+  var MAX_PLAUSIBLE_MPS = 90;    // 324 km/h: por encima de esto es un salto de GPS, no un desplazamiento
+  var DAILY_DAYS = 7;            // días que muestra el panel «distancia por día», hoy incluido
   // Paleta neón (cian → púrpura): cada dispositivo recibe un color estable y siempre visible.
   var NEON = ['#00e5ff', '#b14cff', '#ff4dd2', '#00ff9c', '#ffd166', '#7c8cff', '#ff6b6b', '#5eead4'];
   var FETCH_PATH = '/api/locations?format=compact&limit=' + POLL_LIMIT;
@@ -142,12 +164,16 @@
   var el = function (id) { return document.getElementById(id); };
   var ui = {
     base: el('apiBase'), token: el('apiToken'), interval: el('intervalSel'), view: el('viewSel'),
-    feed: el('feedSel'),
+    feed: el('feedSel'), gistId: el('gistId'), gistLabel: el('gistLabel'),
+    ghPath: el('ghPathInput'), ghPathLabel: el('ghPathLabel'),
+    csv: el('csvBtn'), gpx: el('gpxBtn'), days: el('daysBtn'),
     follow: el('followSel'), raw: el('rawToggle'), toggle: el('toggleBtn'), clear: el('clearBtn'),
     pill: el('statusPill'), statusText: el('statusText'), devices: el('devices'), hint: el('emptyHint'),
     map: el('map'), radar: el('radar'),
+    daily: el('daily'), dailyRows: el('dailyRows'), dailyTotal: el('dailyTotal'),
     statDevices: el('statDevices'), statOnline: el('statOnline'), statPoints: el('statPoints'),
-    statDistance: el('statDistance'), statSync: el('statSync'), statLatency: el('statLatency')
+    statDistance: el('statDistance'), statToday: el('statToday'), statSync: el('statSync'),
+    statLatency: el('statLatency')
   };
 
   var state = {
@@ -158,6 +184,8 @@
     raw: localStorage.getItem(LS.raw) !== '0',   // las dos trazas se ven por defecto
     feed: localStorage.getItem(LS.feed) || 'api',
     ghPath: localStorage.getItem(LS.ghPath) || GH_DEFAULT_PATH,
+    gist: localStorage.getItem(LS.gist) || '',
+    pendingFollow: '',
     running: true,
     failures: 0,
     inFlight: false,
@@ -187,7 +215,7 @@
   }
 
   function apiBase() {
-    var base = (ui.base.value || state.base || '').trim().replace(/\/+$/, '');    return base;
+    return (ui.base.value || state.base || '').trim().replace(/\/+$/, '');
   }
 
   function headers() {
@@ -290,12 +318,21 @@
         var latest = dev.latest || {};
         var lastTs = latest.ts || (rows.length ? rows[rows.length - 1][0] : 0);
         var smooth = smoothFromRows(rows);   // solo existe si quien publicó el fichero filtró la traza
+        var compact = rows.map(function (r) {
+          return [r[0], r[1], r[2], r[3], r[4], r[5]];
+        });
+        // El fichero publicado no trae las estadísticas que sí calcula la API: se deducen aquí.
+        var stats = summarizeFeed(compact, smooth);
         return {
           device_id: dev.device_id,
           summary: {
             label: dev.label || dev.device_id,
             points: rows.length,
-            distance_m: 0,
+            distance_m: stats.distance_m,
+            raw_distance_m: stats.raw_distance_m,
+            noise_removed_m: stats.noise_removed_m,
+            max_speed_mps: stats.max_speed_mps,
+            avg_accuracy_m: stats.avg_accuracy_m,
             online: (now - lastTs) <= STALE_MS,
             last_seen: lastTs,
             age_ms: Math.max(0, now - lastTs)
@@ -307,9 +344,7 @@
             activity: latest.activity, gnss: dev.gnss,
             wifi: dev.wifi, cell: dev.cell
           },
-          points: rows.map(function (r) {
-            return [r[0], r[1], r[2], r[3], r[4], r[5]];
-          }),
+          points: compact,
           smooth: smooth
         };
       })
@@ -352,6 +387,598 @@
         state.inFlight = false;
         schedule();
       });
+  }
+
+  /* ------------------------------------------------------------------ fuente Gist */
+
+  // El Gist es la tercera fuente: el mismo visor lee el histórico que publica la app cuando no hay
+  // backend ni repositorio. El contrato es el que fija `tools/gist_schema.py` (bloques `location`,
+  // `telemetry` y `status`), con dos tolerancias deliberadas: se aceptan los alias de longitud que ya
+  // admite el backend (`lng`, `lon`, `longitude`) y los ficheros con un solo objeto suelto, porque un
+  // Gist se edita a mano y una lectura estricta dejaría la pantalla vacía sin decir por qué.
+
+  function gistRawUrl() {
+    var value = (ui.gistId.value || state.gist || '').trim();
+    if (!value) { return ''; }
+    if (/^https?:\/\//i.test(value)) { return value; }
+    var id = value.replace(/[^0-9a-f]/gi, '');
+    return id.length >= 8 ? 'https://gist.githubusercontent.com/' + id + '/raw/' : '';
+  }
+
+  function firstNumber() {
+    for (var i = 0; i < arguments.length; i++) {
+      if (typeof arguments[i] === 'number' && isFinite(arguments[i])) { return arguments[i]; }
+    }
+    return null;
+  }
+
+  // Magnitud opcional: `-1` es el centinela de "desconocida" del contrato, así que no es un valor.
+  function magnitude() {
+    var value = firstNumber.apply(null, arguments);
+    return (value === null || value === -1) ? null : value;
+  }
+
+  function firstText() {
+    for (var i = 0; i < arguments.length; i++) {
+      var value = arguments[i];
+      if (typeof value === 'string' && value.trim()) { return value.trim(); }
+    }
+    return '';
+  }
+
+  /**
+   * Estadísticas del dispositivo calculadas en el navegador. Ni el Gist ni el fichero de Pages traen
+   * el resumen que sí calcula la API, así que sin esto las dos fuentes sin servidor mostrarían
+   * «rec. 0 m» en la tarjeta y en el pie. La distancia filtrada es la del trazo suavizado cuando
+   * existe, y `noise_removed_m` es lo que el filtro quitó (bruta − filtrada), igual que en la API.
+   *
+   * Se definen más abajo que sus llamadas en el fichero a propósito: son declaraciones de función, que
+   * se elevan, y así el adaptador del fichero de Pages queda junto a su propia fuente.
+   */
+  function summarizeFeed(rawRows, smoothRows) {
+    var raw = summarizeRows(rawRows);
+    var filtered = (smoothRows && smoothRows.length) ? summarizeRows(smoothRows) : null;
+    var distance = filtered ? filtered.distance_m : raw.distance_m;
+    return {
+      distance_m: distance,
+      raw_distance_m: raw.distance_m,
+      noise_removed_m: Math.max(0, raw.distance_m - distance),
+      max_speed_mps: raw.max_speed_mps,
+      avg_accuracy_m: raw.avg_accuracy_m
+    };
+  }
+
+  /** Distancia recorrida, velocidad máxima y precisión media de una lista de filas compactas. */
+  function summarizeRows(rows) {
+    var distance = 0, maxSpeed = null, accSum = 0, accCount = 0, previous = null;
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      var lat = row[1], lng = row[2];
+      if (typeof lat !== 'number' || typeof lng !== 'number' || !isFinite(lat) || !isFinite(lng)) {
+        previous = null;                    // sin coordenada no hay tramo que medir
+        continue;
+      }
+      if (previous) {
+        var meters = haversine(previous[0], previous[1], lat, lng);
+        var seconds = Math.abs(row[0] - previous[2]) / 1000;
+        // Un tramo que implicaría más de 90 m/s no es un desplazamiento: es un salto de GPS, el mismo
+        // umbral que descarta el filtro del móvil.
+        if (seconds <= 0 || (meters / seconds) <= MAX_PLAUSIBLE_MPS) { distance += meters; }
+      }
+      previous = [lat, lng, row[0]];
+      var speed = row[3];
+      if (typeof speed === 'number' && isFinite(speed) && speed >= 0
+          && (maxSpeed === null || speed > maxSpeed)) { maxSpeed = speed; }
+      var acc = row[5];
+      if (typeof acc === 'number' && isFinite(acc) && acc > 0) { accSum += acc; accCount++; }
+    }
+    return {
+      distance_m: Math.round(distance),
+      max_speed_mps: maxSpeed,
+      avg_accuracy_m: accCount ? Math.round(accSum / accCount) : null
+    };
+  }
+
+  /**
+   * Distancia y puntos por día natural del navegador, de más antiguo a más reciente y con hoy
+   * siempre presente. Responde la pregunta que un total de sesión no responde —cuánto se ha
+   * recorrido hoy— y lo hace con las mismas reglas que `summarizeRows`: solo tramos creíbles y la
+   * traza filtrada cuando existe, así que el número del teléfono y el del navegador coinciden.
+   */
+  function summarizeDays(devices, days, nowMs) {
+    var byDay = collectDays(devices);
+    var out = [];
+    for (var back = days - 1; back >= 0; back--) {
+      var key = dayKeyBack(nowMs, back);
+      var entry = byDay[key];
+      out.push({
+        key: key, label: dayLabel(key, nowMs),
+        distance_m: entry ? entry.distance_m : 0,
+        points: entry ? entry.points : 0
+      });
+    }
+    return out;
+  }
+
+  /**
+   * El núcleo del día a día: distancia y puntos por día natural, **sumando cada dispositivo por
+   * separado**. El detalle importa: si los puntos de dos teléfonos se mezclaran en la misma lista, el
+   * tramo entre el último punto de uno y el primero del otro sería un salto inventado de cientos de
+   * kilómetros. Cada dispositivo se mide con `summarizeRows` sobre sus propias filas y luego se suma.
+   */
+  function collectDays(devices) {
+    var byDay = {};
+    devices.forEach(function (d) {
+      var raw = {}, smooth = {};
+      bucketByDay(d.pts, raw);
+      bucketByDay(d.smoothPts, smooth);
+      for (var key in raw) {
+        if (!raw.hasOwnProperty(key)) { continue; }
+        var filtered = smooth[key] ? summarizeRows(smooth[key]) : null;
+        var entry = byDay[key] || (byDay[key] = { key: key, distance_m: 0, points: 0 });
+        entry.distance_m += filtered ? filtered.distance_m : summarizeRows(raw[key]).distance_m;
+        entry.points += raw[key].length;
+      }
+    });
+    return byDay;
+  }
+
+  /** Todos los días con datos que hay cargados, del más antiguo al más reciente: es lo que se exporta. */
+  function allDaysSummary(devices) {
+    var byDay = collectDays(devices), keys = [];
+    for (var key in byDay) { if (byDay.hasOwnProperty(key)) { keys.push(key); } }
+    keys.sort();
+    return keys.map(function (key) {
+      return {
+        key: key, label: key.slice(8) + '/' + key.slice(5, 7),
+        distance_m: byDay[key].distance_m, points: byDay[key].points
+      };
+    });
+  }
+
+  /** El CSV del día a día. Cadena vacía si no hay ningún día con datos, para que quien lo llame lo diga. */
+  function daysCsvText(days) {
+    if (!days || !days.length) { return ''; }
+    var lines = ['fecha,distancia_m,distancia_km,puntos'];
+    days.forEach(function (d) {
+      lines.push([d.key, d.distance_m, (d.distance_m / 1000).toFixed(3), d.points].join(','));
+    });
+    return lines.join('\n') + '\n';
+  }
+
+  /** Metros recorridos hoy por un dispositivo, con las mismas reglas que el panel del día. */
+  function deviceTodayMeters(device, nowMs) {
+    var entry = collectDays([device])[dayKey(nowMs)];
+    return entry ? entry.distance_m : 0;
+  }
+
+  /** Reparte las filas de un dispositivo en cubos por día natural local. */
+  function bucketByDay(rows, out) {
+    for (var i = 0; i < (rows ? rows.length : 0); i++) {
+      var ts = rows[i][0];
+      if (typeof ts !== 'number' || !isFinite(ts) || ts <= 0) { continue; }
+      var key = dayKey(ts);
+      if (!out[key]) { out[key] = []; }
+      out[key].push(rows[i]);
+    }
+  }
+
+  /** Día natural local de un instante, como texto ISO: se compara y se ordena como texto. */
+  function dayKey(ms) {
+    var d = new Date(ms), pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  }
+
+  /** El mismo día desplazado: con `setDate` los cambios de hora y de mes no descuadran nada. */
+  function dayKeyBack(ms, days) {
+    var d = new Date(ms);
+    d.setDate(d.getDate() - days);
+    return dayKey(d.getTime());
+  }
+
+  /** `hoy`, `ayer` o `20/09`: lo que se lee de un vistazo en el panel. */
+  function dayLabel(key, nowMs) {
+    if (key === dayKey(nowMs)) { return 'hoy'; }
+    if (key === dayKeyBack(nowMs, 1)) { return 'ayer'; }
+    return key.slice(8) + '/' + key.slice(5, 7);
+  }
+
+  /** Panel del día a día, con la barra de cada día a escala del mejor día de la ventana. */
+  function renderDailyPanel(devices) {
+    if (!ui.daily || !ui.dailyRows) { return; }
+    var days = summarizeDays(devices, DAILY_DAYS, Date.now());
+    var today = days[days.length - 1];
+    if (ui.statToday) { ui.statToday.textContent = fmtDistance(today.distance_m); }
+    var any = false, max = 0, total = 0;
+    days.forEach(function (d) {
+      if (d.points > 0) { any = true; total += d.distance_m; }
+      if (d.distance_m > max) { max = d.distance_m; }
+    });
+    ui.daily.hidden = !any;
+    if (!any) { return; }
+    if (ui.dailyTotal) { ui.dailyTotal.textContent = fmtDistance(total) + ' en ' + DAILY_DAYS + ' días'; }
+    ui.dailyRows.innerHTML = days.filter(function (d) { return d.points > 0 || d.key === today.key; })
+      .map(function (d) {
+        var width = max > 0 ? Math.max(2, Math.round(d.distance_m / max * 100)) : 0;
+        return '<div class="day' + (d.key === today.key ? ' now' : '') + '">' +
+          '<span>' + d.label + '</span>' +
+          '<span class="bar"><i style="width:' + width + '%"></i></span>' +
+          '<span class="km">' + fmtDistance(d.distance_m) + '</span>' +
+          '<span class="pts">' + d.points + ' pts</span>' +
+        '</div>';
+      }).join('');
+  }
+
+  /** Distancia entre dos coordenadas en metros (haversine, radio medio terrestre). */
+  function haversine(lat1, lng1, lat2, lng2) {
+    var radius = 6371008.8, rad = Math.PI / 180;
+    var dLat = (lat2 - lat1) * rad, dLng = (lng2 - lng1) * rad;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+      + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return 2 * radius * Math.asin(Math.min(1, Math.sqrt(a)));
+  }
+
+  /** Un punto del Gist, o `null` si no tiene coordenada o instante utilizables. */
+  function normalizeGistPoint(item) {
+    if (!item || typeof item !== 'object') { return null; }
+    var location = item.location && typeof item.location === 'object' ? item.location : item;
+    var telemetry = item.telemetry && typeof item.telemetry === 'object' ? item.telemetry : item;
+    var status = item.status && typeof item.status === 'object' ? item.status : {};
+    var lat = firstNumber(location.latitude, location.lat);
+    var lng = firstNumber(location.longitude, location.lng, location.lon);
+    if (lat === null || lng === null || lat < -90 || lat > 90 || lng < -180 || lng > 180) { return null; }
+    // El instante es la clave de la fusión y el contrato exige que sea positivo: sin él (o con un 0
+    // de relleno) el punto no se puede ordenar ni deduplicar, así que se descarta en lugar de
+    // inventarle una hora.
+    var ts = firstNumber(telemetry.timestamp_ms, telemetry.timestamp, telemetry.ts, item.ts);
+    if (ts === null || ts <= 0) { return null; }
+    if (ts < 1e12) { ts = ts * 1000; }       // segundos → milisegundos, como normaliza el backend
+    return {
+      ts: Math.round(ts), lat: lat, lng: lng,
+      deviceId: firstText(telemetry.device_id, item.device_id, status.device_id) || 'gist',
+      label: firstText(telemetry.label, status.label, item.label),
+      speed: magnitude(location.speed_mps, telemetry.speed_mps),
+      speedKmh: magnitude(location.speed_kmh, telemetry.speed_kmh),
+      bearing: magnitude(location.bearing_degrees, location.bearing, telemetry.bearing_degrees),
+      acc: magnitude(location.accuracy_meters, location.accuracy, telemetry.accuracy_meters),
+      battery: magnitude(telemetry.battery_level, telemetry.battery),
+      altitude: magnitude(location.altitude, telemetry.altitude),
+      smoothLat: magnitude(location.smooth_latitude, telemetry.smooth_latitude),
+      smoothLng: magnitude(location.smooth_longitude, telemetry.smooth_longitude),
+      provider: firstText(location.provider),
+      activity: firstText(telemetry.activity),
+      network: firstText(telemetry.network_label, telemetry.network_type),
+      mock: location.mock === true,
+      tracking: status.is_tracking === true,
+      lastError: firstText(status.last_error)
+    };
+  }
+
+  /**
+   * Lectura tolerante: un JSON a medias (GitHub propagando una escritura) devuelve `null` para que el
+   * ciclo se reintente sin borrar lo que ya está en pantalla.
+   */
+  function parseGistPayload(text, stats) {
+    if (typeof text !== 'string' || !text.trim()) { return null; }
+    var data;
+    try { data = JSON.parse(text); } catch (e) { return null; }
+    var list;
+    if (Array.isArray(data)) { list = data; }
+    else if (data && typeof data === 'object') { list = [data]; }   // objeto suelto → un punto
+    else { return null; }
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      var point = normalizeGistPoint(list[i]);
+      if (point) { out.push(point); }
+    }
+    if (stats) {
+      // Cuántos se cayeron y por qué: un fichero leído bien que no pinta nada es indistinguible de
+      // «todavía no hay datos», y ese silencio ya costó una tarde una vez.
+      stats.total = list.length;
+      stats.valid = out.length;
+      stats.discarded = list.length - out.length;
+    }
+    return out;
+  }
+
+  /**
+   * Traduce el histórico del Gist a la misma forma que devuelve la API, para que el resto del visor
+   * (mapa, radar, tarjetas, estadísticas) no sepa de dónde vienen los puntos. Las filas llevan las
+   * diez columnas compactas, así que la traza filtrada aparece también si el Gist la publica.
+   */
+  function gistToApiShape(list) {
+    var byDevice = {};
+    var order = [];
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i];
+      var bucket = byDevice[p.deviceId];
+      if (!bucket) {
+        bucket = byDevice[p.deviceId] = { id: p.deviceId, label: '', rows: [], newest: null };
+        order.push(p.deviceId);
+      }
+      if (p.label) { bucket.label = p.label; }
+      if (!bucket.newest || p.ts >= bucket.newest.ts) { bucket.newest = p; }
+      bucket.rows.push([p.ts, p.lat, p.lng, p.speed, p.bearing, p.acc, p.battery, p.activity,
+        p.smoothLat, p.smoothLng]);
+    }
+    var now = Date.now();
+    var devices = [];
+    for (var k = 0; k < order.length; k++) {
+      var b = byDevice[order[k]];
+      b.rows.sort(function (a, c) { return a[0] - c[0]; });
+      var newest = b.newest || { ts: 0 };
+      var smoothRows = smoothFromRows(b.rows);   // la traza filtrada, si el Gist la publica
+      var stats = summarizeFeed(b.rows, smoothRows);
+      devices.push({
+        device_id: b.id,
+        summary: {
+          label: b.label || b.id,
+          points: b.rows.length,
+          distance_m: stats.distance_m,
+          raw_distance_m: stats.raw_distance_m,
+          noise_removed_m: stats.noise_removed_m,
+          max_speed_mps: stats.max_speed_mps,
+          avg_accuracy_m: stats.avg_accuracy_m,
+          online: (now - newest.ts) <= STALE_MS,
+          last_seen: newest.ts,
+          age_ms: Math.max(0, now - newest.ts)
+        },
+        latest: {
+          lat: newest.lat, lng: newest.lng, timestamp: newest.ts,
+          speed_mps: newest.speed, bearing: newest.bearing, accuracy: newest.acc,
+          battery: newest.battery, provider: newest.provider || 'gist',
+          altitude: newest.altitude, activity: newest.activity,
+          network: newest.network, mock: newest.mock
+        },
+        points: b.rows,
+        smooth: smoothRows
+      });
+    }
+    return { ok: true, source: 'gist', server_time: now, count: devices.length, devices: devices };
+  }
+
+  function pollGist() {
+    if (!state.running || state.inFlight) { return; }
+    var url = gistRawUrl();
+    if (!url) {
+      // Sin destino no se programa un ciclo: no hay nada que reintentar hasta que se escriba el ID.
+      clearTimeout(state.timer);
+      setStatus('err', 'Gist: indica el ID o la URL raw');
+      ui.hint.textContent = 'Pega el ID del Gist (o su URL raw) para ver el histórico.';
+      return;
+    }
+    state.inFlight = true;
+    var controller = new AbortController();
+    var timeout = setTimeout(function () { controller.abort(); }, HTTP_TIMEOUT_MS);
+    var started = performance.now();
+    // cache-buster por ciclo: GitHub sirve el raw con caché agresiva
+    fetch(url + (url.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now(),
+          { method: 'GET', cache: 'no-store', signal: controller.signal })
+      .then(function (res) {
+        if (!res.ok) { throw new Error('HTTP ' + res.status); }
+        return res.text();   // texto y no JSON: una lectura a medias no debe romper el ciclo
+      })
+      .then(function (text) {
+        var counts = {};
+        var list = parseGistPayload(text, counts);
+        if (list === null) { throw new Error('JSON ilegible (GitHub propagando la escritura)'); }
+        if (!list.length) {
+          // Un fichero leído bien sin nada pintable no es «aún no hay datos»: se dice qué se descartó.
+          throw new Error('el Gist se leyó bien, pero no trae ningún punto válido'
+            + (counts.discarded ? ' (' + counts.discarded + ' descartado(s) por el contrato)' : ''));
+        }
+        var shape = gistToApiShape(list);
+        state.failures = 0;
+        state.lastSync = Date.now();
+        state.lastLatency = Math.round(performance.now() - started);
+        ui.statSync.textContent = new Date(state.lastSync).toLocaleTimeString();
+        ui.statLatency.textContent = state.lastLatency + ' ms';
+        ingest(shape);
+        var newest = 0;
+        for (var i = 0; i < list.length; i++) { if (list[i].ts > newest) { newest = list[i].ts; } }
+        var age = Date.now() - newest;
+        setStatus(age <= STALE_MS ? 'ok' : 'wait',
+          'Gist · ' + list.length + ' puntos · ' + shape.count + ' disp. · último ' + fmtAge(age) + ' atrás'
+            + (counts.discarded ? ' · ' + counts.discarded + ' descartado(s)' : ''));
+      })
+      .catch(function (err) {
+        state.failures++;
+        setStatus('err', (err && err.name === 'AbortError' ? 'timeout' : (err && err.message) || 'error')
+          + ' · reintento ' + state.failures);
+      })
+      .finally(function () {
+        clearTimeout(timeout);
+        state.inFlight = false;
+        schedule();
+      });
+  }
+
+  /* ------------------------------------------------------------------ vista, exportación y URL */
+
+  /** Vacía lo pintado y el estado local. Se usa al limpiar y al cambiar de fuente. */
+  function resetView() {
+    state.devices.forEach(function (d) {
+      if (!map) { return; }
+      if (d.polyline) { map.removeLayer(d.polyline); }
+      if (d.smoothLine) { map.removeLayer(d.smoothLine); }
+      if (d.marker) { map.removeLayer(d.marker); }
+      if (d.circle) { map.removeLayer(d.circle); }
+    });
+    state.devices.clear();
+    state.firstLoad = true;
+    refreshFollowOptions();
+    render();
+  }
+
+  function emptyHintText() {
+    if (state.feed === 'gist') { return 'Leyendo el Gist: todavía no hay puntos.'; }
+    if (state.feed === 'github') { return 'Leyendo ' + state.ghPath + ': todavía no hay dispositivos.'; }
+    return 'Esperando telemetría de la API…';
+  }
+
+  function feedStartingText() {
+    if (state.feed === 'gist') { return 'leyendo el Gist…'; }
+    if (state.feed === 'github') { return 'leyendo GitHub Pages…'; }
+    return 'conectando a la API…';
+  }
+
+  /** Cada fuente tiene sus propios campos: solo se muestran los de la seleccionada. */
+  function updateSourceVisibility() {
+    var isGist = state.feed === 'gist';
+    var isGithub = state.feed === 'github';
+    ui.gistId.hidden = !isGist;
+    ui.gistLabel.hidden = !isGist;
+    ui.ghPath.hidden = !isGithub;
+    ui.ghPathLabel.hidden = !isGithub;
+    ui.base.placeholder = isGithub
+      ? 'https://usuario.github.io/repo  (vacío = este mismo sitio)'
+      : 'https://mi-servidor.ejemplo.com  (vacío = mismo origen)';
+    ui.hint.textContent = emptyHintText();
+  }
+
+  /** Descarga en el navegador: un Blob y un enlace temporal, sin servidor ni permisos. */
+  function download(name, text, mime) {
+    try {
+      var blob = new Blob([text], { type: mime });
+      var url = URL.createObjectURL(blob);
+      var link = document.createElement('a');
+      link.href = url;
+      link.download = name;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+    } catch (err) {
+      setStatus('err', 'no se pudo exportar: ' + ((err && err.message) || 'error'));
+    }
+  }
+
+  function fileStamp() {
+    return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  }
+
+  function visiblePoints() {
+    var total = 0;
+    state.devices.forEach(function (d) { total += d.pts.length; });
+    return total;
+  }
+
+  function exportCsv() {
+    if (!visiblePoints()) { setStatus('err', 'no hay puntos que exportar'); return; }
+    var lines = ['device_id,instante_iso,lat,lng,velocidad_mps,rumbo_deg,precision_m'];
+    state.devices.forEach(function (d) {
+      d.pts.forEach(function (p) {
+        lines.push([
+          d.id, new Date(p.ts).toISOString(), p.lat, p.lng,
+          p.speed === null || p.speed === undefined ? '' : p.speed,
+          p.bearing === null || p.bearing === undefined ? '' : p.bearing,
+          p.acc === null || p.acc === undefined ? '' : p.acc
+        ].join(','));
+      });
+    });
+    download('telemetria-' + fileStamp() + '.csv', lines.join('\n') + '\n', 'text/csv;charset=utf-8');
+    setStatus('ok', 'CSV exportado · ' + (lines.length - 1) + ' puntos');
+  }
+
+  function exportGpx() {
+    if (!visiblePoints()) { setStatus('err', 'no hay puntos que exportar'); return; }
+    var body = [], tracks = 0, points = 0, first = 0, last = 0, meters = 0;
+    state.devices.forEach(function (d) {
+      if (d.pts.length < 2) { return; }      // un GPX con un solo punto no es una traza
+      var distance = summarizeFeed(d.pts, d.smoothPts).distance_m;
+      tracks++;
+      points += d.pts.length;
+      meters += distance;
+      if (!first || d.pts[0].ts < first) { first = d.pts[0].ts; }
+      if (d.pts[d.pts.length - 1].ts > last) { last = d.pts[d.pts.length - 1].ts; }
+      body.push('  <trk><name>' + esc(d.id) + '</name>');
+      body.push('    <desc>' + d.pts.length + ' puntos · ' + fmtDistance(distance) + ' recorridos</desc>');
+      body.push('    <trkseg>');
+      d.pts.forEach(function (p) {
+        body.push('      <trkpt lat="' + p.lat + '" lon="' + p.lng + '"><time>'
+          + new Date(p.ts).toISOString() + '</time></trkpt>');
+      });
+      body.push('    </trkseg></trk>');
+    });
+    if (!tracks) { setStatus('err', 'no hay ninguna traza con dos puntos'); return; }
+    // El fichero se describe a sí mismo —trazas, puntos, distancia y el rango temporal—: al abrirlo
+    // en un mapa, un reloj o un analizador, esos datos ya no hay que deducirlos a mano.
+    var parts = ['<?xml version="1.0" encoding="UTF-8"?>',
+      '<gpx version="1.1" creator="telemetria-p2p" xmlns="http://www.topografix.com/GPX/1/1">',
+      '  <metadata>',
+      '    <name>Telemetría P2P</name>',
+      '    <desc>' + tracks + ' traza(s) · ' + points + ' puntos · ' + fmtDistance(meters)
+        + ' · ' + new Date(first).toISOString() + ' … ' + new Date(last).toISOString() + '</desc>',
+      '    <time>' + new Date().toISOString() + '</time>',
+      '  </metadata>'];
+    parts = parts.concat(body);
+    parts.push('</gpx>');
+    download('telemetria-' + fileStamp() + '.gpx', parts.join('\n') + '\n', 'application/gpx+xml');
+    setStatus('ok', 'GPX exportado · ' + tracks + ' traza(s) · ' + fmtDistance(meters));
+  }
+
+  /** La tabla del día a día como CSV: es el dato que se guarda, no una captura del panel. */
+  function exportDaysCsv() {
+    var days = allDaysSummary(Array.from(state.devices.values()));
+    if (!days.length) { setStatus('err', 'no hay ningún día con datos que exportar'); return; }
+    download('telemetria-dias-' + fileStamp() + '.csv', daysCsvText(days), 'text/csv;charset=utf-8');
+    var total = 0;
+    days.forEach(function (d) { total += d.distance_m; });
+    setStatus('ok', 'días exportados · ' + days.length + ' día(s) · ' + fmtDistance(total));
+  }
+
+  /**
+   * Parámetros de la URL para poder compartir una vista concreta:
+   * `?feed=gist&gist=<id>&path=data/latest.json&base=<url>&view=radar&interval=5000&follow=<id>&raw=0`.
+   * Los tokens no se aceptan por URL a propósito: una credencial en el historial del navegador o en
+   * un enlace compartido es una credencial filtrada.
+   */
+  function applyUrlParams() {
+    var query = (location.search || '').replace(/^\?/, '');
+    if (!query) { return; }
+    var pairs = query.split('&');
+    var params = {};
+    for (var i = 0; i < pairs.length; i++) {
+      if (!pairs[i]) { continue; }
+      var cut = pairs[i].indexOf('=');
+      var key = cut < 0 ? pairs[i] : pairs[i].slice(0, cut);
+      var value = cut < 0 ? '' : pairs[i].slice(cut + 1);
+      try { params[decodeURIComponent(key)] = decodeURIComponent(value); } catch (e) { /* se ignora */ }
+    }
+    var feed = String(params.feed || '').toLowerCase();
+    if (feed === 'api' || feed === 'github' || feed === 'gist') {
+      state.feed = feed;
+      ui.feed.value = feed;
+    }
+    if (params.gist) {
+      state.gist = params.gist;
+      ui.gistId.value = params.gist;
+      localStorage.setItem(LS.gist, state.gist);
+    }
+    if (params.path) {
+      state.ghPath = params.path;
+      ui.ghPath.value = params.path;
+      localStorage.setItem(LS.ghPath, state.ghPath);
+    }
+    if (params.base) {
+      state.base = params.base;
+      ui.base.value = params.base;
+      localStorage.setItem(LS.base, state.base);
+    }
+    if (params.view === 'map' || params.view === 'radar') {
+      state.view = params.view;
+      ui.view.value = params.view;
+    }
+    if (params.raw === '0' || params.raw === '1') {
+      state.raw = params.raw === '1';
+      ui.raw.checked = state.raw;
+    }
+    var interval = parseInt(params.interval, 10);
+    if (interval >= 1000) {
+      state.interval = interval;
+      ui.interval.value = String(interval);
+    }
+    if (params.follow) { state.pendingFollow = params.follow; }
   }
 
   /* ------------------------------------------------------------------ mapa / radar */
@@ -519,6 +1146,8 @@
       return lb - la;
     });
     ui.hint.style.display = list.length ? 'none' : 'block';
+    if (!list.length) { ui.hint.textContent = emptyHintText(); }
+    var nowMs = Date.now();
     ui.devices.innerHTML = list.map(function (d) {
       var s = d.summary || {}, p = d.latest || {};
       var age = s.age_ms !== undefined ? s.age_ms : Date.now() - (s.last_seen || Date.now());
@@ -530,6 +1159,7 @@
           '<span>vel <b>' + fmtSpeed(p.speed) + '</b></span>' +
           '<span>± <b>' + (p.acc !== null && p.acc !== undefined ? Math.round(p.acc) + ' m' : '—') + '</b></span>' +
           '<span>rec. <b>' + fmtDistance(s.distance_m || 0) + '</b></span>' +
+          '<span>hoy <b>' + fmtDistance(deviceTodayMeters(d, nowMs)) + '</b></span>' +
           '<span>máx <b>' + fmtSpeed(s.max_speed_mps) + '</b></span>' +
           '<span>pts <b>' + (s.points || d.pts.length) + '</b></span>' +
           '<span>prov <b>' + esc(shortProvider(p.provider)) + '</b></span>' +
@@ -564,6 +1194,7 @@
     ui.statOnline.textContent = online;
     ui.statPoints.textContent = points;
     ui.statDistance.textContent = fmtDistance(distance);
+    renderDailyPanel(Array.from(state.devices.values()));
   }
 
   function render() {
@@ -578,6 +1209,11 @@
       return '<option value="' + esc(id) + '">Seguir: ' + esc(id) + '</option>';
     }).join('');
     if (ids.indexOf(current) >= 0) { ui.follow.value = current; }
+    // `?follow=<id>` de la URL: se aplica en cuanto el dispositivo aparece por primera vez.
+    if (state.pendingFollow && ids.indexOf(state.pendingFollow) >= 0) {
+      ui.follow.value = state.pendingFollow;
+      state.pendingFollow = '';
+    }
   }
 
   /* ------------------------------------------------------------------ ingesta */
@@ -680,16 +1316,22 @@
 
   /* ------------------------------------------------------------------ sondeo */
 
+  /** El ciclo programa siempre la fuente seleccionada, así el resto del código no la conoce. */
+  function pollCurrent() {
+    if (state.feed === 'github') { pollGithub(); return; }
+    if (state.feed === 'gist') { pollGist(); return; }
+    poll();
+  }
+
   function schedule() {
     clearTimeout(state.timer);
     var delay = state.failures
       ? Math.min(60000, state.interval * Math.pow(2, Math.min(state.failures, 4)))
       : state.interval;
-    state.timer = setTimeout(state.feed === 'github' ? pollGithub : poll, delay);
+    state.timer = setTimeout(pollCurrent, delay);
   }
 
   function poll() {
-    if (state.feed === 'github') { pollGithub(); return; }
     if (!state.running || state.inFlight) { return; }
     state.inFlight = true;
     var controller = new AbortController();
@@ -724,7 +1366,7 @@
   }
 
   function onVisible() {
-    if (!document.hidden && state.running) { poll(); }
+    if (!document.hidden && state.running) { pollCurrent(); }
   }
 
   /* ------------------------------------------------------------------ eventos */
@@ -733,13 +1375,15 @@
   ui.token.value = state.token;
   ui.interval.value = String(state.interval);
   ui.view.value = state.view;
+  ui.gistId.value = state.gist;
+  ui.ghPath.value = state.ghPath;
 
   ui.base.addEventListener('change', function () {
     state.base = ui.base.value.trim();
     localStorage.setItem(LS.base, state.base);
     state.failures = 0;
     setStatus('wait', 'reconfigurado');
-    poll();
+    pollCurrent();
   });
   ui.token.addEventListener('change', function () {
     state.token = ui.token.value.trim();
@@ -767,28 +1411,36 @@
     localStorage.setItem(LS.feed, state.feed);
     state.failures = 0;
     clearTimeout(state.timer);
-    setStatus('wait', state.feed === 'github' ? 'leyendo GitHub Pages…' : 'conectando a la API…');
-    poll();
+    updateSourceVisibility();
+    // Cambiar de fuente vacía la vista: mezclar dos orígenes distintos haría pasar por un recorrido
+    // lo que en realidad son dos historiales.
+    resetView();
+    setStatus('wait', feedStartingText());
+    pollCurrent();
   });
   ui.toggle.addEventListener('click', function () {
     state.running = !state.running;
     ui.toggle.textContent = state.running ? 'Pausar' : 'Reanudar';
-    if (state.running) { state.failures = 0; setStatus('wait', 'reanudado'); poll(); }
+    if (state.running) { state.failures = 0; setStatus('wait', 'reanudado'); pollCurrent(); }
     else { clearTimeout(state.timer); setStatus('wait', 'pausado'); }
   });
-  ui.clear.addEventListener('click', function () {
-    state.devices.forEach(function (d) {
-      if (map) {
-        if (d.polyline) { map.removeLayer(d.polyline); }
-        if (d.smoothLine) { map.removeLayer(d.smoothLine); }
-        if (d.marker) { map.removeLayer(d.marker); }
-        if (d.circle) { map.removeLayer(d.circle); }
-      }
-    });
-    state.devices.clear();
-    state.firstLoad = true;
-    refreshFollowOptions();
-    render();
+  ui.clear.addEventListener('click', function () { resetView(); });
+  ui.csv.addEventListener('click', exportCsv);
+  ui.gpx.addEventListener('click', exportGpx);
+  ui.days.addEventListener('click', exportDaysCsv);
+  ui.gistId.addEventListener('change', function () {
+    state.gist = ui.gistId.value.trim();
+    localStorage.setItem(LS.gist, state.gist);
+    state.failures = 0;
+    resetView();
+    pollCurrent();
+  });
+  ui.ghPath.addEventListener('change', function () {
+    state.ghPath = ui.ghPath.value.trim() || GH_DEFAULT_PATH;
+    localStorage.setItem(LS.ghPath, state.ghPath);
+    state.failures = 0;
+    resetView();
+    pollCurrent();
   });
   ui.devices.addEventListener('click', function (event) {
     var card = event.target.closest('.card');
@@ -804,11 +1456,19 @@
 
   if (window.TELEMETRY_INTERVAL) { state.interval = window.TELEMETRY_INTERVAL; ui.interval.value = String(state.interval); }
 
+  applyUrlParams();
+  updateSourceVisibility();
   applyView();
-  setStatus('wait', 'conectando…');
-  poll();
+  setStatus('wait', feedStartingText());
+  pollCurrent();
 
-  window.__telemetry = { state: state, poll: poll, map: function () { return map; } };
+  window.__telemetry = {
+    state: state, poll: pollCurrent, pollGist: pollGist, pollGithub: pollGithub,
+    parseGist: parseGistPayload, toApiShape: gistToApiShape,
+    exportCsv: exportCsv, exportGpx: exportGpx, exportDaysCsv: exportDaysCsv, reset: resetView,
+    days: function () { return allDaysSummary(Array.from(state.devices.values())); },
+    map: function () { return map; }
+  };
 })();
 </script>
 </body>
