@@ -1,12 +1,12 @@
 package com.example.telemetry;
 
+import android.accessibilityservice.AccessibilityService;
 import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
-import android.view.accessibility.AccessibilityService;
 import android.widget.Toast;
 
 import java.util.Locale;
