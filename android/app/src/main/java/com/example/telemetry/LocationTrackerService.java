@@ -394,7 +394,7 @@ public class LocationTrackerService extends Service implements LocationListener 
                 return;
             }
             if (isFused(provider)) {
-                registerAccurateFused();
+                registerAccurateFused(provider);
             } else {
                 locationManager.requestLocationUpdates(provider, minTimeMs, minDistanceM, this, Looper.getMainLooper());
             }
@@ -420,8 +420,15 @@ public class LocationTrackerService extends Service implements LocationListener 
      * {@code QUALITY_HIGH_ACCURACY} con réplica rápida entre fixes, que es el mando de precisión
      * que el builder del framework ofrece de verdad. {@code setWaitForAccurateLocation} existe solo
      * en el cliente de Play Services, y ese camino lo cubre {@link FusedLocationBridge}.</p>
+     *
+     * <p>Las sobrecargas del framework que aceptan {@code LocationRequest} llevan el <b>proveedor
+     * como primer argumento</b>. Omitirlo hace que javac elija la sobrecarga {@code (String,
+     * LocationRequest, PendingIntent)} y falle con «LocationRequest cannot be converted to
+     * String»: el error no está en el tipo de la petición sino en su posición.</p>
+     *
+     * @param provider nombre exacto del proveedor fusionado que se está registrando
      */
-    private void registerAccurateFused() {
+    private void registerAccurateFused(String provider) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             try {
                 // El constructor (calidad, intervalo) es de Play Services; el builder del framework
@@ -431,7 +438,7 @@ public class LocationTrackerService extends Service implements LocationListener 
                         .setMinUpdateIntervalMillis(Math.max(1_000L, minTimeMs / 2L))
                         .setMinUpdateDistanceMeters(Math.max(0f, minDistanceM / 2f))
                         .build();
-                locationManager.requestLocationUpdates(request, getMainExecutor(), this);
+                locationManager.requestLocationUpdates(provider, request, getMainExecutor(), this);
                 Log.i(TAG, "fused de alta precisión activo");
                 return;
             } catch (Exception e) {
@@ -483,18 +490,26 @@ public class LocationTrackerService extends Service implements LocationListener 
     }
 
     /**
-     * Pide un único fix de alta precisión: calidad alta y un solo resultado ({@code setMaxUpdates},
-     * que el builder del framework sí tiene) usando únicamente métodos verificados contra la API
-     * real. Devuelve {@code false} si el dispositivo no lo soporta, para poder caer al método
-     * clásico por proveedor.
+     * Pide un único fix de alta precisión al proveedor fusionado: calidad alta y un solo resultado
+     * ({@code setMaxUpdates}). El proveedor va como primer argumento porque es lo que exige la
+     * sobrecarga del framework —{@code getCurrentLocation(String, LocationRequest,
+     * CancellationSignal, Executor, Consumer)}, añadida en la API 31—. Devuelve {@code false} si el
+     * dispositivo no lo soporta o no hay proveedor fusionado, para poder caer al método clásico
+     * por proveedor.
      */
     private boolean requestAccurateCurrentFix() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return false;
+        }
         try {
+            if (!locationManager.getAllProviders().contains(FUSED_PROVIDER)) {
+                return false;
+            }
             LocationRequest request = new LocationRequest.Builder(5_000L)
                     .setQuality(LocationRequest.QUALITY_HIGH_ACCURACY)
                     .setMaxUpdates(1)
                     .build();
-            locationManager.getCurrentLocation(request, cancellationSignal, freshFixExecutor, new Consumer<Location>() {
+            locationManager.getCurrentLocation(FUSED_PROVIDER, request, cancellationSignal, freshFixExecutor, new Consumer<Location>() {
                 @Override
                 public void accept(Location location) {
                     if (location != null) {
