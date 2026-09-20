@@ -66,7 +66,8 @@ vivo. El token que necesitas para este modo solo requiere el permiso `Gists: rea
    409 (sha obsoleto) y publicación como mucho cada 60 s. Activa **Settings → Pages → Deploy from
    branch** en el repo: rama `main` y carpeta **`/ (root)`** — es la única que publica el
    visualizador y `data/latest.json`; con `/docs` se publica solo la documentación (su portada ya
-   existe en `docs/index.html`) y el mapa se ve desde el backend (ver `docs/SETUP.md`, Paso 4).
+   existe en `docs/index.html` y los documentos se leen en `docs/doc.html`, que pinta el Markdown
+   servido por Pages) y el mapa se ve desde el backend (ver `docs/SETUP.md`, Paso 4).
 4. En el visualizador, elige la fuente **GitHub Pages (fichero)**. Desde la propia web de Pages la
    ruta por defecto ya es correcta; para otro repo escribe `https://usuario.github.io/repo` en el
    campo API.
@@ -87,6 +88,7 @@ frontend/gist.html                      Visor del canal Gist (autónomo, sin lib
 index.html                              Portada del sitio de Pages: redirige al visualizador en vivo
 tools/simulate.py                       Generador de trafico sintetico (--noisy)
 tools/check_frontend.py                 Valida el JS embebido de los dos visores con node --check
+tools/check_config.py                   Contrasta el importador, la plantilla y la guía de configuración
 tools/gist_schema.py                    Contrato del canal Gist: validador y fusión de referencia
 tests/test_api.py · tests/test_fusion.py  Tests de endpoints, filtros y fusion
 tests/test_gist_schema.py               Tests del contrato y de las reglas de fusión del Gist
@@ -95,7 +97,8 @@ tests/test_frontend_adapter.py          Contrato del Gist dentro del visor, ejec
  docs/API.md                            Referencia de endpoints con ejemplos curl
  docs/SETUP.md                          Puesta en producción completa (token, Pages, espejo)
  docs/CONFIGURACION.md                  Configuración del móvil campo por campo + plantilla JSON
-config.ejemplo.json                    Plantilla lista para rellenar y copiar al teléfono
+ docs/doc.html                          Lector de la documentación: pinta esos .md publicados (un fichero, sin librerías)
+config.ejemplo.json                    Plantilla lista para rellenar y copiar al teléfono (todas las claves que lee el importador)
  android/.../AppConfig.java             Dueño único de la configuración: exportar, importar y aplicar
  android/.../SecurityGate.java          Código de seguridad de la pantalla (SHA-256 + sal, 5 intentos)
  android/.../UninstallGuard.java         Protección contra desinstalación (propietario + centinela)

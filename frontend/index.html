@@ -2,12 +2,15 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#000000">
 <title>Telemetría · Visualizador P2P</title>
 <meta name="description" content="Visualizador en tiempo real de telemetría y geolocalización (Vanilla JS).">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root{
+    color-scheme:dark;                 /* barras de desplazamiento y controles nativos en oscuro */
     /* OLED puro: negro #000 absoluto para que los píxeles se apaguen, acentos neón cian/púrpura */
     --bg:#000000; --panel:#000000; --panel2:#08080b; --line:#1b1b21;
     --txt:#e9fbff; --dim:#76838f; --ok:#00ff9c; --warn:#ffd166; --err:#ff2d6f;
@@ -16,7 +19,7 @@
   }
   *{box-sizing:border-box}
   html,body{height:100%}
-  body{margin:0;background:var(--bg);color:var(--txt);font:13px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;flex-direction:column}
+  body{margin:0;min-height:100dvh;background:var(--bg);color:var(--txt);font:13px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;flex-direction:column}
   header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;background:var(--panel);border-bottom:1px solid rgba(0,229,255,.16)}
   h1{font-size:14px;margin:0 8px 0 0;letter-spacing:.5px;font-weight:600;white-space:nowrap}
   h1 span{color:var(--acc);text-shadow:0 0 12px rgba(0,229,255,.55)}
@@ -78,6 +81,23 @@
   .dev-marker .pin{width:26px;height:26px;border-radius:50% 50% 50% 0;transform-origin:50% 100%;background:var(--c);box-shadow:0 0 10px var(--c),0 0 0 2px rgba(0,0,0,.6)}
   .dev-marker .pulse{position:absolute;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:var(--c);opacity:.35;animation:pulse 2s infinite}
   @keyframes pulse{0%{transform:scale(.6);opacity:.45}100%{transform:scale(2.4);opacity:0}}
+  /* Barra de aviso: solo aparece cuando algo impide una parte de la vista (p. ej. el CDN del mapa). */
+  .notice{padding:7px 12px;background:rgba(255,209,102,.08);border-bottom:1px solid rgba(255,209,102,.35);color:var(--warn);font-size:12px;line-height:1.5}
+  .notice a{color:var(--warn)}
+  .notice[hidden]{display:none}
+  /* Foco visible de verdad: con ratón no molesta, con teclado es la única pista de dónde estás. */
+  a.btn:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,
+  .card:focus-visible,.leaflet-container:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+  .card:focus-visible{border-color:var(--acc)}
+  button.danger.armed{background:rgba(255,45,111,.16);border-color:var(--err);color:var(--err)}
+  /* Los accesorios de Apple: que la barra y el pie no queden bajo la muesca o la barra de gestos. */
+  header{padding-left:calc(12px + env(safe-area-inset-left));padding-right:calc(12px + env(safe-area-inset-right))}
+  footer{padding-left:calc(12px + env(safe-area-inset-left));padding-right:calc(12px + env(safe-area-inset-right));padding-bottom:calc(6px + env(safe-area-inset-bottom))}
+  @media (prefers-reduced-motion:reduce){
+    *{animation-duration:.001ms!important;animation-iteration-count:1!important;transition:none!important}
+    .dev-marker .pulse{animation:none;opacity:.18}
+    html{scroll-behavior:auto}
+  }
   @media (max-width:860px){main{grid-template-columns:1fr;grid-template-rows:60vh auto}aside{border-left:0;border-top:1px solid var(--line)}}
 </style>
 </head>
@@ -116,16 +136,23 @@
   <button id="daysBtn" title="Descargar en CSV la distancia recorrida cada día, de todo el histórico cargado">Días</button>
   <a class="btn" id="standaloneLink" href="gist.html" title="Visor autónomo del canal Gist: un solo fichero, sin librerías externas. Es el que sigue funcionando si el CDN del mapa no carga">Solo Gist</a>
   <button id="toggleBtn" class="primary">Pausar</button>
-  <button id="clearBtn" class="danger" title="Vacía el historial local del navegador">Limpiar</button>
-  <span id="statusPill" class="pill wait"><i class="dot"></i><span id="statusText">iniciando…</span></span>
+  <button id="clearBtn" class="danger" title="Vacía el historial local del navegador. Se pide confirmación en la propia barra: no hay diálogo del sistema que se pueda bloquear">Limpiar</button>
+  <span id="statusPill" class="pill wait" role="status" aria-live="polite"><i class="dot"></i><span id="statusText">iniciando…</span></span>
 </header>
+
+<noscript>
+  <div class="notice">Este visualizador necesita JavaScript: es quien pide los puntos, dibuja la traza
+y calcula la distancia del día, así que sin él no hay nada que mostrar. La documentación sí se lee sin
+JavaScript, en <code>docs/doc.html</code>.</div>
+</noscript>
+<div id="notice" class="notice" role="status" hidden></div>
 
 <main>
   <div id="stage">
     <div id="map"></div>
     <canvas id="radar"></canvas>
   </div>
-  <aside>
+  <aside aria-label="Dispositivos y recorrido por día">
     <div id="daily" hidden><h2>DISTANCIA POR DÍA<span id="dailyTotal"></span></h2><div id="dailyRows"></div></div>
     <div id="devices"></div>
     <div class="sub" id="emptyHint">Esperando telemetría…</div>
@@ -169,7 +196,7 @@
     csv: el('csvBtn'), gpx: el('gpxBtn'), days: el('daysBtn'),
     follow: el('followSel'), raw: el('rawToggle'), toggle: el('toggleBtn'), clear: el('clearBtn'),
     pill: el('statusPill'), statusText: el('statusText'), devices: el('devices'), hint: el('emptyHint'),
-    map: el('map'), radar: el('radar'),
+    map: el('map'), radar: el('radar'), notice: el('notice'),
     daily: el('daily'), dailyRows: el('dailyRows'), dailyTotal: el('dailyTotal'),
     statDevices: el('statDevices'), statOnline: el('statOnline'), statPoints: el('statPoints'),
     statDistance: el('statDistance'), statToday: el('statToday'), statSync: el('statSync'),
@@ -289,6 +316,13 @@
   function setStatus(kind, text) {
     ui.pill.className = 'pill ' + kind;
     ui.statusText.textContent = text;
+  }
+
+  /** Aviso permanente bajo la cabecera, para lo que impide una parte de la vista. Vacío lo oculta. */
+  function setNotice(text) {
+    if (!ui.notice) { return; }
+    ui.notice.textContent = text || '';
+    ui.notice.hidden = !text;
   }
 
   /* ------------------------------------------------------------------ fuente GitHub Pages */
@@ -486,11 +520,19 @@
    * traza filtrada cuando existe, así que el número del teléfono y el del navegador coinciden.
    */
   function summarizeDays(devices, days, nowMs) {
-    var byDay = collectDays(devices);
+    return dailyWindow(collectDays(devices), days, nowMs);
+  }
+
+  /**
+   * La ventana de los últimos `days` días naturales a partir de unos cubos **ya sumados**, con hoy
+   * siempre presente: un día sin datos sale a cero en vez de desaparecer de la lista.
+   */
+  function dailyWindow(byDay, days, nowMs) {
+    var cubes = byDay || {};
     var out = [];
     for (var back = days - 1; back >= 0; back--) {
       var key = dayKeyBack(nowMs, back);
-      var entry = byDay[key];
+      var entry = cubes[key];
       out.push({
         key: key, label: dayLabel(key, nowMs),
         distance_m: entry ? entry.distance_m : 0,
@@ -500,6 +542,46 @@
     return out;
   }
 
+  /** Cubos por día natural de **un** dispositivo: lo recorrido y cuántos puntos cayeron en cada día. */
+  function daysOfDevice(device) {
+    var raw = {}, smooth = {}, byDay = {};
+    bucketByDay(device.pts, raw);
+    bucketByDay(device.smoothPts, smooth);
+    for (var key in raw) {
+      if (!raw.hasOwnProperty(key)) { continue; }
+      var filtered = smooth[key] ? summarizeRows(smooth[key]) : null;
+      byDay[key] = {
+        key: key,
+        distance_m: filtered ? filtered.distance_m : summarizeRows(raw[key]).distance_m,
+        points: raw[key].length
+      };
+    }
+    return byDay;
+  }
+
+  /** Los cubos de cada dispositivo, **sin mezclarlos**: el panel los suma y cada tarjeta usa el suyo. */
+  function collectDaysByDevice(devices) {
+    var out = {};
+    devices.forEach(function (d) { out[d.id] = daysOfDevice(d); });
+    return out;
+  }
+
+  /** Suma los cubos de varios dispositivos en un único mapa por día. */
+  function mergeDays(byDevice) {
+    var byDay = {};
+    for (var id in byDevice) {
+      if (!byDevice.hasOwnProperty(id)) { continue; }
+      var days = byDevice[id];
+      for (var key in days) {
+        if (!days.hasOwnProperty(key)) { continue; }
+        var entry = byDay[key] || (byDay[key] = { key: key, distance_m: 0, points: 0 });
+        entry.distance_m += days[key].distance_m;
+        entry.points += days[key].points;
+      }
+    }
+    return byDay;
+  }
+
   /**
    * El núcleo del día a día: distancia y puntos por día natural, **sumando cada dispositivo por
    * separado**. El detalle importa: si los puntos de dos teléfonos se mezclaran en la misma lista, el
@@ -507,20 +589,7 @@
    * kilómetros. Cada dispositivo se mide con `summarizeRows` sobre sus propias filas y luego se suma.
    */
   function collectDays(devices) {
-    var byDay = {};
-    devices.forEach(function (d) {
-      var raw = {}, smooth = {};
-      bucketByDay(d.pts, raw);
-      bucketByDay(d.smoothPts, smooth);
-      for (var key in raw) {
-        if (!raw.hasOwnProperty(key)) { continue; }
-        var filtered = smooth[key] ? summarizeRows(smooth[key]) : null;
-        var entry = byDay[key] || (byDay[key] = { key: key, distance_m: 0, points: 0 });
-        entry.distance_m += filtered ? filtered.distance_m : summarizeRows(raw[key]).distance_m;
-        entry.points += raw[key].length;
-      }
-    });
-    return byDay;
+    return mergeDays(collectDaysByDevice(devices));
   }
 
   /** Todos los días con datos que hay cargados, del más antiguo al más reciente: es lo que se exporta. */
@@ -534,6 +603,13 @@
         distance_m: byDay[key].distance_m, points: byDay[key].points
       };
     });
+  }  /**
+   * Celda CSV: se entrecomilla solo si trae coma, comilla o salto, doblando las comillas. Sin esto, un
+   * `device_id` con coma parte la fila en dos columnas y el fichero deja de importarse.
+   */
+  function csvCell(value) {
+    var text = (value === null || value === undefined) ? '' : String(value);
+    return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
   }
 
   /** El CSV del día a día. Cadena vacía si no hay ningún día con datos, para que quien lo llame lo diga. */
@@ -541,14 +617,15 @@
     if (!days || !days.length) { return ''; }
     var lines = ['fecha,distancia_m,distancia_km,puntos'];
     days.forEach(function (d) {
-      lines.push([d.key, d.distance_m, (d.distance_m / 1000).toFixed(3), d.points].join(','));
+      lines.push([csvCell(d.key), csvCell(d.distance_m), csvCell((d.distance_m / 1000).toFixed(3)),
+        csvCell(d.points)].join(','));
     });
     return lines.join('\n') + '\n';
   }
 
   /** Metros recorridos hoy por un dispositivo, con las mismas reglas que el panel del día. */
   function deviceTodayMeters(device, nowMs) {
-    var entry = collectDays([device])[dayKey(nowMs)];
+    var entry = daysOfDevice(device)[dayKey(nowMs)];
     return entry ? entry.distance_m : 0;
   }
 
@@ -584,9 +661,9 @@
   }
 
   /** Panel del día a día, con la barra de cada día a escala del mejor día de la ventana. */
-  function renderDailyPanel(devices) {
+  function renderDailyPanel(byDay, nowMs) {
     if (!ui.daily || !ui.dailyRows) { return; }
-    var days = summarizeDays(devices, DAILY_DAYS, Date.now());
+    var days = dailyWindow(byDay, DAILY_DAYS, nowMs);
     var today = days[days.length - 1];
     if (ui.statToday) { ui.statToday.textContent = fmtDistance(today.distance_m); }
     var any = false, max = 0, total = 0;
@@ -869,10 +946,8 @@
     state.devices.forEach(function (d) {
       d.pts.forEach(function (p) {
         lines.push([
-          d.id, new Date(p.ts).toISOString(), p.lat, p.lng,
-          p.speed === null || p.speed === undefined ? '' : p.speed,
-          p.bearing === null || p.bearing === undefined ? '' : p.bearing,
-          p.acc === null || p.acc === undefined ? '' : p.acc
+          csvCell(d.id), csvCell(new Date(p.ts).toISOString()), csvCell(p.lat), csvCell(p.lng),
+          csvCell(p.speed), csvCell(p.bearing), csvCell(p.acc)
         ].join(','));
       });
     });
@@ -998,6 +1073,10 @@
     ui.map.classList.toggle('off', radarMode);
     canvas.classList.toggle('on', radarMode);
     ui.view.value = radarMode && !window.L ? 'radar' : state.view;
+    // Sin la librería del mapa el radar es la única vista posible. Decirlo es mejor que enseñar un
+    // hueco negro sin explicación: pasa cuando el CDN no responde al abrir la página.
+    setNotice(window.L ? '' : 'No se pudo cargar la librería del mapa (Leaflet, desde el CDN). Se '
+      + 'muestra el radar; la traza, las tarjetas y la distancia funcionan igual.');
     if (!radarMode) { initMap(); if (map) { setTimeout(function () { map.invalidateSize(); }, 60); } }
     resizeCanvas();
     render();
@@ -1074,7 +1153,8 @@
     d = {
       id: id, color: NEON[hashHue(id) % NEON.length], pts: [], seen: new Set(),
       smoothPts: [], smoothSeen: new Set(), hasSmooth: false,
-      latest: null, summary: null, polyline: null, marker: null, circle: null, smoothLine: null
+      latest: null, summary: null, polyline: null, marker: null, circle: null, smoothLine: null,
+      card: null
     };
     state.devices.set(id, d);
     refreshFollowOptions();
@@ -1086,7 +1166,8 @@
     var gnss = p.gnss || {};
     return '<b>' + esc(s.label || d.id) + '</b><br>' +
       'vel ' + fmtSpeed(p.speed) + '<br>' +
-      '± ' + (p.acc !== null && p.acc !== undefined ? Math.round(p.acc) + ' m' : '—') +
+      '± ' + (p.acc !== null && p.acc !== undefined ? Math.round(p.acc) + ' m' : '—') + '<br>' +
+      'hoy ' + fmtDistance(deviceTodayMeters(d, Date.now())) +
       (gnss.used !== undefined ? '<br>sat ' + esc(satelliteSummary(gnss)) : '') +
       (rttSummary(p.rtt) ? '<br>rtt ' + esc(rttSummary(p.rtt)) : '') +
       (p.complete === false ? '<br>fix incompleto' : '') +
@@ -1125,10 +1206,12 @@
       var icon = L.divIcon({ className: 'dev-marker', html: html, iconSize: [26, 26], iconAnchor: [13, 13] });
       if (!d.marker) {
         d.marker = L.marker(ll, { icon: icon, title: d.id }).addTo(map);
-        d.marker.bindPopup(deviceTooltip(d));
+        // Leaflet acepta una función como contenido: el globo se construye al abrirlo y no en cada
+        // render. Antes se rehacía en cada frame, incluido el recorrido de hoy, para un texto que casi
+        // nunca se está mirando.
+        d.marker.bindPopup(function () { return deviceTooltip(d); });
       } else {
         d.marker.setLatLng(ll); d.marker.setIcon(icon);
-        if (d.marker.getPopup()) { d.marker.setPopupContent(deviceTooltip(d)); }
       }
       var acc = d.latest.acc;
       if (acc && acc > 0) {
@@ -1138,28 +1221,19 @@
     });
   }
 
-  function renderSidebar() {
-    var scroller = ui.devices.parentElement || ui.devices;
-    var scroll = scroller.scrollTop;
-    var list = Array.from(state.devices.values()).sort(function (a, b) {
-      var la = (a.summary && a.summary.last_seen) || 0, lb = (b.summary && b.summary.last_seen) || 0;
-      return lb - la;
-    });
-    ui.hint.style.display = list.length ? 'none' : 'block';
-    if (!list.length) { ui.hint.textContent = emptyHintText(); }
-    var nowMs = Date.now();
-    ui.devices.innerHTML = list.map(function (d) {
-      var s = d.summary || {}, p = d.latest || {};
-      var age = s.age_ms !== undefined ? s.age_ms : Date.now() - (s.last_seen || Date.now());
+  /**
+   * El cuerpo de una tarjeta: todo lo que cambia con los datos. La fila de arriba —nombre y
+   * antigüedad— se queda fuera a propósito: la antigüedad cambia en cada sondeo, así que si formara
+   * parte de este HTML el cuerpo se reescribiría siempre y con él se perdería el foco del teclado.
+   */
+  function cardBody(d, s, p, todayMeters) {
       var battery = (p.battery === null || p.battery === undefined) ? 0 : p.battery;
-      return '<div class="card' + (age > STALE_MS ? ' offline' : '') + '" data-id="' + esc(d.id) + '" style="border-left-color:' + d.color + '">' +
-        '<div class="top"><span class="id">' + esc(s.label || d.id) + '</span><span class="age">' + fmtAge(age) + ' atrás</span></div>' +
-        '<div class="sub">' + (p.lat !== undefined ? p.lat.toFixed(5) + ', ' + p.lng.toFixed(5) : 'sin posición') + '</div>' +
+      return '<div class="sub">' + (p.lat !== undefined ? p.lat.toFixed(5) + ', ' + p.lng.toFixed(5) : 'sin posición') + '</div>' +
         '<div class="kv">' +
           '<span>vel <b>' + fmtSpeed(p.speed) + '</b></span>' +
           '<span>± <b>' + (p.acc !== null && p.acc !== undefined ? Math.round(p.acc) + ' m' : '—') + '</b></span>' +
           '<span>rec. <b>' + fmtDistance(s.distance_m || 0) + '</b></span>' +
-          '<span>hoy <b>' + fmtDistance(deviceTodayMeters(d, nowMs)) + '</b></span>' +
+          '<span>hoy <b>' + fmtDistance(todayMeters) + '</b></span>' +
           '<span>máx <b>' + fmtSpeed(s.max_speed_mps) + '</b></span>' +
           '<span>pts <b>' + (s.points || d.pts.length) + '</b></span>' +
           '<span>prov <b>' + esc(shortProvider(p.provider)) + '</b></span>' +
@@ -1179,27 +1253,79 @@
         (d.pts.length > 1 && d.smoothPts.length < 2 ? '<span class="fake">SIN FILTRO</span>' : '') + '</div>' +
         (p.wifi && p.wifi.length ? '<div class="sub">wifi: ' + esc(p.wifi.slice(0, 2).map(function (w) { return (w.ssid || w.bssid || '?') + ' ' + (w.rssi !== undefined ? w.rssi : w.level) + 'dBm'; }).join(' · ')) + '</div>' : '') +
         (p.cell && p.cell.length ? '<div class="sub">celda: ' + esc(p.cell.slice(0, 2).map(function (c) { return (c.type || '?') + ' cid=' + (c.cid || '?') + ' ' + (c.rsrp || c.dbm || '') + 'dBm'; }).join(' · ')) + '</div>' : '') +
-        (rttSummary(p.rtt) ? '<div class="sub">rtt (802.11mc): ' + esc(rttSummary(p.rtt)) + '</div>' : '') +
-      '</div>';
-    }).join('');
-    scroller.scrollTop = scroll;
+        (rttSummary(p.rtt) ? '<div class="sub">rtt (802.11mc): ' + esc(rttSummary(p.rtt)) + '</div>' : '');
+  }
+
+  /**
+   * Las tarjetas se **crean una vez y se actualizan en su sitio**. Antes se reemplazaba la lista
+   * entera en cada sondeo: eso reparseaba el HTML de todos los dispositivos cada pocos segundos y se
+   * llevaba por delante el foco del teclado, el hover y cualquier texto seleccionado. Ahora el cuerpo
+   * solo se reescribe cuando su contenido cambia de verdad, y se compara la cadena ya construida, que
+   * es la firma más barata y la única que no se olvida de ningún campo.
+   *
+   * Los cubos de día llegan calculados desde `render()`: `daysOfDevice` recorre todos los puntos de un
+   * dispositivo, así que llamarlo por tarjeta —más el panel— multiplicaba ese trabajo por el número de
+   * dispositivos en cada render.
+   */
+  function renderSidebar(list, byDeviceDays, nowMs) {
+    var todayKey = dayKey(nowMs);
+    ui.hint.style.display = list.length ? 'none' : 'block';
+    if (!list.length) { ui.hint.textContent = emptyHintText(); }
+    var index = 0;
+    list.forEach(function (d) {
+      var s = d.summary || {}, p = d.latest || {};
+      var age = s.age_ms !== undefined ? s.age_ms : nowMs - (s.last_seen || nowMs);
+      var card = d.card;
+      if (!card) {
+        card = d.card = document.createElement('div');
+        card.className = 'card';
+        card.setAttribute('role', 'button');     // se abre con el teclado, no solo con el ratón
+        card.tabIndex = 0;
+        card.innerHTML = '<div class="top"><span class="id"></span><span class="age"></span></div>'
+          + '<div class="body"></div>';
+        card.idEl = card.querySelector('.id');
+        card.ageEl = card.querySelector('.age');
+        card.bodyEl = card.querySelector('.body');
+      }
+      card.setAttribute('data-id', d.id);
+      card.style.borderLeftColor = d.color;
+      card.classList.toggle('offline', age > STALE_MS);
+      card.idEl.textContent = s.label || d.id;   // texto y no HTML: un nombre no puede inyectar nada
+      card.ageEl.textContent = fmtAge(age) + ' atrás';
+      var today = byDeviceDays[d.id] && byDeviceDays[d.id][todayKey];
+      var body = cardBody(d, s, p, today ? today.distance_m : 0);
+      if (card.bodyHtml !== body) { card.bodyEl.innerHTML = body; card.bodyHtml = body; }
+      if (ui.devices.children[index] !== card) {
+        ui.devices.insertBefore(card, ui.devices.children[index] || null);
+      }
+      index++;
+    });
+    // Lo que sobra detrás son dispositivos que ya no están: cambio de fuente o «Limpiar».
+    while (ui.devices.children.length > index) {
+      ui.devices.removeChild(ui.devices.children[index]);
+    }
 
     var points = 0, distance = 0, online = 0;
-    state.devices.forEach(function (d) {
+    list.forEach(function (d) {
       points += d.pts.length;
       distance += (d.summary && d.summary.distance_m) || 0;
       if (d.summary && d.summary.online) { online++; }
     });
-    ui.statDevices.textContent = state.devices.size;
+    ui.statDevices.textContent = list.length;
     ui.statOnline.textContent = online;
     ui.statPoints.textContent = points;
     ui.statDistance.textContent = fmtDistance(distance);
-    renderDailyPanel(Array.from(state.devices.values()));
+    renderDailyPanel(mergeDays(byDeviceDays), nowMs);
   }
 
+  /** Una sola pasada por render: la lista ordenada y los cubos de día de cada dispositivo. */
   function render() {
+    var devices = Array.from(state.devices.values()).sort(function (a, b) {
+      var la = (a.summary && a.summary.last_seen) || 0, lb = (b.summary && b.summary.last_seen) || 0;
+      return lb - la;
+    });
     if (state.view === 'radar' || !window.L) { drawRadar(); } else { renderMap(); }
-    renderSidebar();
+    renderSidebar(devices, collectDaysByDevice(devices), Date.now());
   }
 
   function refreshFollowOptions() {
@@ -1292,8 +1418,12 @@
           outlier: dev.latest.outlier, outlierReason: dev.latest.outlier_reason,
           lowQuality: dev.latest.low_quality
         };
-      } else if (!d.latest && d.pts.length) {
-        d.latest = d.pts[d.pts.length - 1];
+      } else if (d.pts.length) {
+        // Fuente sin bloque `latest` (un fichero editado a mano): la última fila hace de posición
+        // actual. Y se refresca en cada ingesta; antes se fijaba una sola vez y la tarjeta se quedaba
+        // congelada en el primer punto que llegó.
+        var tail = d.pts[d.pts.length - 1];
+        if (!d.latest || tail.ts >= (d.latest.ts || 0)) { d.latest = tail; }
       }
     });
 
@@ -1424,7 +1554,27 @@
     if (state.running) { state.failures = 0; setStatus('wait', 'reanudado'); pollCurrent(); }
     else { clearTimeout(state.timer); setStatus('wait', 'pausado'); }
   });
-  ui.clear.addEventListener('click', function () { resetView(); });
+  // Dos pasos en la propia barra: limpiar el historial local no se deshace, y un diálogo nativo se
+  // puede bloquear en algunos navegadores incrustados. Se desarma solo a los 4 s.
+  var clearTimer = 0;
+  ui.clear.addEventListener('click', function () {
+    if (!clearTimer) {
+      clearTimer = setTimeout(function () {
+        clearTimer = 0;
+        ui.clear.textContent = 'Limpiar';
+        ui.clear.classList.remove('armed');
+      }, 4000);
+      ui.clear.textContent = '¿Seguro?';
+      ui.clear.classList.add('armed');
+      return;
+    }
+    clearTimeout(clearTimer);
+    clearTimer = 0;
+    ui.clear.textContent = 'Limpiar';
+    ui.clear.classList.remove('armed');
+    resetView();
+    setStatus('wait', 'historial local vaciado');
+  });
   ui.csv.addEventListener('click', exportCsv);
   ui.gpx.addEventListener('click', exportGpx);
   ui.days.addEventListener('click', exportDaysCsv);
@@ -1442,14 +1592,25 @@
     resetView();
     pollCurrent();
   });
-  ui.devices.addEventListener('click', function (event) {
-    var card = event.target.closest('.card');
-    if (!card) { return; }
+  /** Seguir un dispositivo y centrarlo: lo mismo con el ratón y con el teclado. */
+  function followCard(card) {
     var d = state.devices.get(card.getAttribute('data-id'));
-    if (!d || !d.latest) { return; }
+    if (!d || !d.latest || !isFinite(d.latest.lat) || !isFinite(d.latest.lng)) { return; }
     ui.follow.value = d.id;
     if (map && state.view === 'map') { map.setView([d.latest.lat, d.latest.lng], 17, { animate: true }); }
     if (d.marker) { d.marker.openPopup(); }
+  }
+
+  ui.devices.addEventListener('click', function (event) {
+    var card = event.target && event.target.closest ? event.target.closest('.card') : null;
+    if (card) { followCard(card); }
+  });
+  ui.devices.addEventListener('keydown', function (event) {
+    if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') { return; }
+    var card = event.target && event.target.closest ? event.target.closest('.card') : null;
+    if (!card) { return; }
+    event.preventDefault();       // la barra espaciadora no debe desplazar la página
+    followCard(card);
   });
   window.addEventListener('resize', function () { resizeCanvas(); if (map) { map.invalidateSize(); } render(); });
   document.addEventListener('visibilitychange', onVisible);

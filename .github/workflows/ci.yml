@@ -48,6 +48,12 @@ jobs:
         # Antes de los tests a propósito: estaba después, así que cada CI roja por la suite dejaba
         # la sintaxis del JavaScript sin verificar. Ahora se comprueba siempre.
         run: python tools/check_frontend.py
+      - name: Plantilla, guía e importador dicen lo mismo
+        # `config.ejemplo.json` es el fichero que la guía manda copiar al teléfono. Si se separa de
+        # lo que lee `AppConfig.apply()`, copiarlo deja ajustes sin aplicar, y el fallo es mudo:
+        # nadie ve que faltaba una clave. Se comprueban los tres sitios a la vez, y la propia
+        # comprobación se autocalibra (si no detecta fallos inyectados, falla).
+        run: python tools/check_config.py
       - name: Tests
         run: python -m unittest discover -s tests -v
 

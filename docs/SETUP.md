@@ -109,10 +109,10 @@ coordenadas (se crea en la primera publicación, ~1 min tras iniciar el rastreo)
    - **`/ (root)`** — *recomendada*: publica todo. La raíz la sirve el `index.html` de la raíz del
      repositorio, que redirige al visualizador en vivo; el visor autónomo queda en
      `…/frontend/gist.html`, el fichero de datos en
-     `https://TU_USUARIO.github.io/REPO/data/latest.json`, y la documentación en `…/docs/API.html` y
-     `…/docs/SETUP.html`.
-   - **`/docs`** — publica **solo** la documentación, con la portada de `docs/index.html`
-     (`…/API.html`, `…/SETUP.html`). El visualizador y `data/latest.json` **no** se publican: con
+     `https://TU_USUARIO.github.io/REPO/data/latest.json`, y la documentación en
+     `…/docs/doc.html` (el lector que sirve los tres documentos).
+   - **`/docs`** — publica **solo** la documentación, con la portada de `docs/index.html` y el lector
+     en `…/docs/doc.html`. El visualizador y `data/latest.json` **no** se publican: con
      esta carpeta, la fuente «GitHub Pages (fichero)» del visor se queda sin datos y el mapa en vivo
      se ve desde el backend (`docker compose up --build -d` → `http://localhost:8000/`).
 

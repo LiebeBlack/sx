@@ -123,6 +123,12 @@ public class MainActivity extends Activity {
             // inservible: se registra el fallo y se muestra una versión mínima que sigue permitiendo
             // iniciar y detener el rastreo con la configuración ya guardada.
             ErrorLogger.recordFatal("MainActivity/buildUi", "no se pudo construir la interfaz", t);
+            // Se sueltan las vistas a medias antes de mostrar la de emergencia: si `buildUi` falló a
+            // mitad —como pasó con la tarjeta 6— la mitad construida deja campos apuntando a una
+            // pantalla que ya no está en uso, y el primer latido de estado lanzaría un NPE **encima**
+            // del fallo original. Con esto, todas las guardas de null que ya existen para el modo de
+            // emergencia valen sin importar en qué línea se rompió.
+            releaseConfigViews();
             setContentView(fallbackUi(t));
         }
         fillFieldsFromPrefs();
@@ -264,7 +270,9 @@ public class MainActivity extends Activity {
             }
         });
         protectionCard.addView(protectionGrid);
-        root.addView(protectionCard);
+        // Sin `root.addView(protectionCard)`: `card(root, …)` ya la añadió al crearla. Volver a añadirla
+        // lanzaba IllegalStateException («el hijo ya tiene padre») y dejaba la pantalla entera en el
+        // modo de emergencia, porque `buildUi` se construye de una sola vez.
 
         LinearLayout actionCard = card(root, "7 · Control del rastreo", null);
         GridLayout actions = buttonGrid();
@@ -334,8 +342,7 @@ public class MainActivity extends Activity {
                 openAppSettings();
             }
         });
-        hardeningCard.addView(hardening);
-        root.addView(hardeningCard);
+        hardeningCard.addView(hardening);      // la tarjeta ya está en `root`: la añade `card(root, …)`
 
         LinearLayout statusCard = card(root, "9 · Estado", null);
         statusView = monospaced();
@@ -364,7 +371,14 @@ public class MainActivity extends Activity {
         return root;
     }
 
-    /** Tarjeta con título y explicación: agrupa los campos para que la pantalla se lea de un vistazo. */
+    /**
+     * Tarjeta con título y explicación: agrupa los campos para que la pantalla se lea de un vistazo.
+     *
+     * <p><b>La añade ya al padre</b> (última línea), así que quien la reciba <b>no debe volver a
+     * añadirla</b>: `root.addView(loQueDevuelve)` lanza `IllegalStateException` —«el hijo ya tiene
+     * padre»— y, como `buildUi` construye todo de una vez, ese fallo tumba la pantalla completa y deja
+     * la app en el modo de emergencia.</p>
+     */
     private LinearLayout card(LinearLayout parent, String heading, String description) {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);

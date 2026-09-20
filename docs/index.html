@@ -11,7 +11,10 @@
   repositorio (que redirige al visualizador en vivo) y esta portada se sigue publicando, pero en
   `…/docs/`. Es decir: funciona con las dos configuraciones.
 
-  Sin JavaScript y sin dependencias externas, como el resto del proyecto.
+  Sin JavaScript y sin dependencias externas. Los documentos se sirven con `doc.html`, el lector
+  de un solo fichero que pinta el Markdown que Pages publica de esta misma carpeta: antes esta
+  portada enlazaba a `SETUP.html`, `API.html` y `CONFIGURACION.html`, que no existen —la
+  documentación se escribe en `.md` y nada la convertía—, así que cada enlace daba 404.
 -->
 <style>
   :root {
@@ -68,15 +71,15 @@
 
   <h2>Documentación</h2>
   <div class="cards">
-    <a class="card" href="SETUP.html">
+    <a class="card" href="doc.html?f=SETUP.md">
       <strong>Puesta en marcha</strong>
       <span>Permisos, token, Pages, contenedor y checklist de instalación en el móvil.</span>
     </a>
-    <a class="card" href="API.html">
+    <a class="card" href="doc.html?f=API.md">
       <strong>API del backend</strong>
       <span>Ingesta por lotes, lecturas compactas, filtros y borrado por dispositivo.</span>
     </a>
-    <a class="card" href="CONFIGURACION.html">
+    <a class="card" href="doc.html?f=CONFIGURACION.md">
       <strong>Configurar el móvil</strong>
       <span>Cada clave explicada, la plantilla JSON que la app carga sola y el código de seguridad.</span>
     </a>
@@ -97,13 +100,15 @@
       visor autónomo del canal Gist queda en <code>…/frontend/gist.html</code>.</li>
   </ul>
   <p>Este sitio publica la carpeta <code>/docs</code>, así que sirve la documentación y no el mapa.
-  El visor del canal Gist —lectura cada 3 s con <em>cache-busting</em> y deduplicación por
-  <code>timestamp_ms</code>— vive en <code>frontend/gist.html</code>, dentro del repositorio.</p>
+  La documentación se lee en <a href="doc.html">el lector de documentos</a>, que pinta el Markdown
+  servido por este mismo sitio y lleva su propio índice. El visor del canal Gist —lectura cada 3 s
+  con <em>cache-busting</em> y deduplicación por <code>timestamp_ms</code>— vive en
+  <code>frontend/gist.html</code>, dentro del repositorio.</p>
 
   <h2>Configurar en un minuto</h2>
   <p>La app lee <code>Descargas/Telemetria/config.json</code> al abrirse y aplica lo que traiga, sin
   tocar un solo campo. La plantilla está en <code>config.ejemplo.json</code> y el significado de cada
-  clave, en <a href="CONFIGURACION.html">Configurar el móvil</a>. Las claves que se dejen fuera
+  clave, en <a href="doc.html?f=CONFIGURACION.md">Configurar el móvil</a>. Las claves que se dejen fuera
   conservan su valor y lo que no se entienda se avisa con el motivo, nunca en silencio.</p>
 
   <h2>Estado de la compilación</h2>

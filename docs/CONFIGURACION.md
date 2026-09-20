@@ -71,6 +71,7 @@ lo que no pongas conserva el valor que ya tuviera el teléfono):
     "api_key": ""
   },
   "device": {
+    "device_id": "",
     "label": "Teléfono de campo"
   },
   "tracking": {
@@ -80,16 +81,30 @@ lo que no pongas conserva el valor que ya tuviera el teléfono):
   },
   "github": {
     "token": "",
+    "user": "",
     "repo": "usuario/repositorio",
     "branch": "main",
     "path": "data/latest.json"
   },
   "gist": {
+    "token": "",
     "id": "",
     "file": "data.json"
+  },
+  "security": {
+    "pin": ""
   }
 }
 ```
+
+> **`device_id` vacío es lo correcto aquí.** En blanco significa «no lo toques»: cada teléfono
+> conserva el identificador que ya generó, así que copiar esta plantilla en varios equipos **no
+> los iguala**. Y el bloque `security` trae `pin` vacío (no cambia el código) pero **no trae
+> `lock`**: con `false` borraría el código de un teléfono que ya lo tenga, y esto es el fichero que
+> se copia tal cual. Para quitar un código, escríbelo tú —está explicado en el apartado 6—.
+>
+> Esta copia y el fichero [`config.ejemplo.json`](https://github.com/LiebeBlack/sx/blob/main/config.ejemplo.json)
+> tienen que ser idénticos, y la CI lo comprueba (`tools/check_config.py`).
 
 Dos avisos sobre la plantilla, porque son los dos errores fáciles:
 
@@ -138,6 +153,7 @@ Dos avisos sobre la plantilla, porque son los dos errores fáciles:
 | --- | --- | --- | --- | --- |
 | `token` | texto | no | `github_pat_…` | Token *fine-grained* con permiso `Contents: read and write` **sobre ese repositorio**. Sin token, el canal queda desactivado. |
 | `repo` | texto | no | `usuario/mi-repo` | Repositorio destino, en formato `usuario/repositorio`. Si lo reparte en dos claves (`user` + `repo`), también lo entiende. |
+| `user` | texto | no | `usuario` | Solo tiene sentido junto a un `repo` escrito **sin** la barra: se combinan en `usuario/repositorio`. Si el `repo` ya trae la barra, esta clave no se usa. |
 | `branch` | texto | no | `main` | Rama donde se escribe el fichero. |
 | `path` | texto | no | `data/latest.json` | Ruta del fichero dentro del repositorio. Es el que lee el visor en modo «GitHub Pages (fichero)». |
 

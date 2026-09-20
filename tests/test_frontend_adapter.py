@@ -219,6 +219,29 @@ var mixedList = parseGistPayload(mixedText, counts);
 check("el Gist cuenta los puntos válidos", mixedList.length === 1 && counts.valid === 1, dump(counts));
 check("el Gist cuenta los descartados", counts.discarded === 1 && counts.total === 2, dump(counts));
 
+// 12) El CSV entrecomilla lo que lo necesita y solo lo que lo necesita.
+check("una celda con coma se entrecomilla", csvCell("Sant, Feliu") === '"Sant, Feliu"', csvCell("Sant, Feliu"));
+check("una comilla se dobla dentro de las comillas", csvCell('di"jo') === '"di""jo"', csvCell('di"jo'));
+check("un numero no se entrecomilla", csvCell(12) === "12", csvCell(12));
+check("nulo es celda vacia, no la cadena 'null'", csvCell(null) === "" && csvCell(undefined) === "", csvCell(null));
+check("un salto de linea obliga a entrecomillar", csvCell("a\nb") === '"a\nb"', "sin comillas");
+
+// 13) El nucleo del dia es uno solo: por tarjeta (cubos de un dispositivo), sumado (panel) y con la
+//     ventana ya calculada. Antes se recalculaba entero por dispositivo y otra vez para el panel.
+var perDevice = collectDaysByDevice([pairA, pairB]);
+check("los cubos por dispositivo no mezclan telefonos",
+  perDevice["a"][todayKey].distance_m === summarizeRows(pairA.pts).distance_m
+  && perDevice["b"][todayKey].distance_m === 0, dump(perDevice["b"][todayKey]));
+check("sumar los cubos da lo mismo que collectDays",
+  mergeDays(perDevice)[todayKey].distance_m === collectDays([pairA, pairB])[todayKey].distance_m
+  && mergeDays(perDevice)[todayKey].points === collectDays([pairA, pairB])[todayKey].points,
+  mergeDays(perDevice)[todayKey].distance_m);
+check("summarizeDays es la ventana de los cubos ya calculados",
+  summarizeDays([pairA], 7, nowMs)[6].distance_m === dailyWindow(daysOfDevice(pairA), 7, nowMs)[6].distance_m,
+  summarizeDays([pairA], 7, nowMs)[6].distance_m);
+check("sin cubos la ventana sigue teniendo siete dias a cero",
+  dailyWindow({}, 7, nowMs).length === 7 && dailyWindow({}, 7, nowMs)[0].points === 0, "no");
+
 console.log(fails ? ("RESULTADO: " + fails + " fallo(s)") : "RESULTADO: todo correcto");
 """
 

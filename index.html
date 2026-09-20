@@ -8,9 +8,12 @@
   Raíz del sitio de GitHub Pages.
 
   Este fichero SOLO se publica si Pages está configurado como `main` + carpeta `/ (root)`.
-  Con la carpeta en `/docs` el sitio sirve únicamente `docs/`, que no tiene index.html: el dominio
-  responde 404 («For root URLs you must provide an index.html»), el visualizador de `frontend/` no
-  se publica y `data/latest.json` tampoco se sirve. Ver docs/SETUP.md, Paso 4.
+  Con la carpeta en `/docs` el sitio sirve únicamente `docs/`, que tiene su propia portada en
+  `docs/index.html`: el visualizador de `frontend/` no se publica y `data/latest.json` tampoco se
+  sirve. Ver docs/SETUP.md, Paso 4.
+
+  Los enlaces a la documentación apuntan a `docs/doc.html`, el lector de un solo fichero que pinta el
+  Markdown publicado: los antiguos `docs/API.html` y `docs/SETUP.html` nunca existieron y daban 404.
 
   El espectador en vivo vive en `frontend/index.html` y deduce la base del repositorio del primer
   segmento de la ruta (`/REPO/`), así que funciona igual servido desde aquí o desde `/frontend/`.
@@ -31,8 +34,9 @@
   <p>Abriendo el <a href="frontend/index.html">visualizador en vivo</a>…</p>
   <p><small>Si no ocurre solo:
     <a href="frontend/gist.html">visor autónomo del canal Gist</a> ·
-    <a href="docs/API.html">API</a> ·
-    <a href="docs/SETUP.html">puesta en marcha</a>
+    <a href="docs/doc.html?f=API.md">API</a> ·
+    <a href="docs/doc.html?f=SETUP.md">puesta en marcha</a> ·
+    <a href="docs/doc.html?f=CONFIGURACION.md">configuración</a>
   </small></p>
 </body>
 </html>

@@ -291,7 +291,11 @@ public final class AppConfig {
 
         /* --- dispositivo --- */
         String deviceId = text(device, root, "device_id", "deviceId");
-        if (deviceId != null) {
+        // Vacío = no tocar. La plantilla trae la clave en blanco a propósito: cada teléfono conserva
+        // el identificador que ya generó, y así copiar la plantilla en varios no los iguala. Antes
+        // un valor vacío entraba aquí, se normalizaba a nada y salía como aviso de configuración
+        // ignorada: un error que solo existía por copiar el fichero que manda la guía.
+        if (deviceId != null && !deviceId.isEmpty()) {
             String clean = sanitizeId(deviceId);
             if (clean.isEmpty()) {
                 ignored.add("device.device_id sin caracteres válidos");

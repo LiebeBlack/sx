@@ -131,6 +131,30 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y
 
 ### Web (visualizador)
 
+- **Las tarjetas se actualizan en su sitio, no se rehacen** (`frontend/index.html`): la lista entera se
+  reemplazaba en cada sondeo, y eso reparseaba el HTML de todos los dispositivos cada pocos segundos y
+  se llevaba por delante el foco del teclado, el hover y cualquier texto seleccionado. Ahora cada
+  tarjeta se crea una vez y solo se reescribe su cuerpo cuando el contenido cambia de verdad (se
+  compara la cadena ya construida). Con el mismo cambio, el recorrido del día se calcula **una sola
+  vez por render**: antes se recalculaba entero por tarjeta y otra vez para el panel, multiplicando el
+  trabajo por el número de dispositivos.
+- **Las tarjetas se abren con el teclado** y el estado se anuncia (`role="button"` + `tabIndex` +
+  Intro/Espacio, `role="status"` con `aria-live` en la píldora, `:focus-visible` en todos los
+  controles). Antes solo respondían al ratón.
+- **Aviso visible si el CDN del mapa no carga** (barra bajo la cabecera): el visor pasa al radar y lo
+  dice, en vez de dejar un hueco negro sin explicación. Y un `<noscript>` que explica que sin
+  JavaScript no hay nada que mostrar, con el enlace a la documentación, que sí se lee sin él.
+- **«Limpiar» pide confirmación en dos pasos** (el botón cambia a «¿Seguro?» durante 4 s): borra el
+  historial local y no se deshace. Se evita el diálogo nativo, que algunos navegadores incrustados
+  bloquean.
+- **El CSV ya no se rompe con una coma en el nombre**: las celdas se entrecomillan solo cuando hace
+  falta y las comillas se doblan, en la exportación de la traza y en la de los días.
+- **El globo del mapa se construye al abrirlo**, no en cada render, y ahora dice también lo recorrido
+  hoy por ese dispositivo. La posición actual de una fuente sin bloque `latest` se refresca en cada
+  ingesta: antes se fijaba una vez y la tarjeta se quedaba congelada en el primer punto que llegó.
+- **Detalles de interfaz**: `color-scheme: dark`, `theme-color`, `viewport-fit=cover` con
+  `safe-area-inset` para las pantallas con muesca, `100dvh`, y `prefers-reduced-motion` para quien pide
+  no ver el latido del marcador.
 - **El visor principal ya lee el Gist**: `frontend/index.html` pasa de dos fuentes a tres —**API en
   vivo**, **GitHub Pages (fichero)** y **Gist (histórico)**—, así que el canal sin servidor y sin
   repositorio deja de tener un visor aparte: el mismo mapa, el mismo radar, las mismas dos trazas
@@ -176,6 +200,48 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y
 
 ### Corregido
 
+- **La plantilla que la guía manda copiar no traía la mitad de los ajustes** (`config.ejemplo.json`,
+  `docs/CONFIGURACION.md`, `tools/check_config.py`): el fichero de ejemplo declaraba 12 claves y el
+  importador entiende 18, así que copiarlo dejaba sin configurar `device.device_id`, `github.user`,
+  `gist.token` y —lo más grave— **`security.pin`**: el apartado 6 explica cómo poner el código de
+  seguridad por fichero, y hacerlo copiando lo que ese mismo apartado manda copiar **no era posible**.
+  El fallo era mudo por definición: quien lo seguía se quedaba sin código y sin ningún aviso, porque
+  una clave que no está en el fichero no se ignora — simplemente no existe. La guía tenía además **su
+  propia copia** de la plantilla, también desactualizada, y nada comparaba los dos textos. Ahora la
+  plantilla cubre los 18 campos, la copia de la guía es idéntica al fichero y una comprobación nueva
+  en CI (`tools/check_config.py`) contrasta los tres sitios —importador, plantilla y guía— y **se
+  autocalibra**: si deja de detectar los fallos que se le inyectan, falla.
+- **Una clave `security.lock` en la plantilla habría borrado el código del teléfono al copiarla**
+  (`config.ejemplo.json`): `"lock": false` **quita** el código existente, y la plantilla es un fichero
+  que se copia tal cual; en un teléfono que ya tuviera candado lo habría desactivado en silencio. Se
+  deja fuera a propósito —y así está declarado, con su motivo, en la comprobación de CI—: para quitar
+  un código se escribe `lock` a mano, que es lo que explica el apartado 6.
+- **Un `device_id` vacío en el fichero salía como «configuración ignorada»** (`AppConfig.java`): vacío
+  ahora significa «no lo toques», que es justo lo que conviene al repartir la plantilla entre varios
+  teléfonos —cada uno conserva el suyo—. Antes entraba en la rama, se normalizaba a nada y aparecía en
+  el aviso de la pantalla: un error que solo existía por copiar el fichero que manda la guía.
+- **La app arrancaba en modo de emergencia y la interfaz completa no llegaba a cargar nunca**
+  (`MainActivity.java`): `card(parent, …)` crea la tarjeta **y ya la añade** al padre, pero dos sitios
+  volvían a añadirla (`root.addView(protectionCard)` y `root.addView(hardeningCard)`), así que
+  `addView` lanzaba `IllegalStateException` —«el hijo ya tiene padre»— y `buildUi` se quedaba a medias.
+  Como la pantalla se construye de una sola vez, ese único fallo tumbaba **las nueve tarjetas**: el
+  usuario no veía ni un campo de configuración y la app caía al modo de emergencia, con el aviso de la
+  pantalla mínima y el `error.json` como única pista. Se quitan las dos líneas sobrantes y el javadoc
+  de `card()` avisa de que **no hay que volver a añadirla**. Además, el camino de emergencia ahora
+  suelta las vistas a medias (`releaseConfigViews()`) antes de mostrar la pantalla mínima: antes solo
+  los cuatro campos de estado estaban guardados contra `null`, así que un fallo un poco más tardío
+  —con los campos de entrada ya creados y las vistas de estado todavía sin crear— habría encadenado un
+  `NullPointerException` encima del fallo original; ahora las guardas cubren cualquier punto.
+- **Toda la documentación publicada daba 404** (`docs/doc.html`, `docs/index.html`, `index.html`): la
+  portada del sitio, el `index.html` de la raíz y la propia prosa de `SETUP.md` enlazaban a
+  `SETUP.html`, `API.html` y `CONFIGURACION.html`, y **esos ficheros no existen**: la documentación se
+  escribe en Markdown y nada la convertía, así que el sitio se servía bien y cada sección daba «File
+  not found». Como este proyecto no tiene paso de compilación para el sitio, la solución es la misma
+  idea que `frontend/gist.html` —**un solo fichero, sin librerías**—: `docs/doc.html` lee el Markdown
+  que Pages publica de su propia carpeta (`text/markdown`) y lo pinta, con lista blanca de los tres
+  documentos, todo el texto escapado antes de añadir etiquetas y las anclas generadas con la regla de
+  GitHub, para que el índice interno de `CONFIGURACION.md` funcione. Además de los enlaces, se
+  comprobó con un rastreador de enlaces relativos que **todo el sitio resuelve** (HTML y Markdown).
 - **Las fuentes sin servidor mostraban «rec. 0 m» para siempre** (`frontend/index.html`): ni el Gist ni
   el fichero de Pages publican el resumen que sí calcula la API (distancia, velocidad máxima, precisión
   media, ruido quitado), así que la tarjeta y el pie mostraban ceros y guiones. Ahora el navegador lo

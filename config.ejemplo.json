@@ -5,6 +5,7 @@
     "api_key": ""
   },
   "device": {
+    "device_id": "",
     "label": "Teléfono de campo"
   },
   "tracking": {
@@ -14,12 +15,17 @@
   },
   "github": {
     "token": "",
+    "user": "",
     "repo": "usuario/repositorio",
     "branch": "main",
     "path": "data/latest.json"
   },
   "gist": {
+    "token": "",
     "id": "",
     "file": "data.json"
+  },
+  "security": {
+    "pin": ""
   }
 }
