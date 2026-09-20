@@ -102,7 +102,7 @@ config.ejemplo.json                    Plantilla lista para rellenar y copiar al
  android/.../AppConfig.java             Dueño único de la configuración: exportar, importar y aplicar
  android/.../SecurityGate.java          Código de seguridad de la pantalla (SHA-256 + sal, 5 intentos)
  android/.../UninstallGuard.java         Protección contra desinstalación (propietario + centinela)
- docs/index.html                        Portada del sitio de Pages (sirve para /docs y para /)
+ docs/index.html                        Portada del sitio: las funciones y la configuración completa (sirve para /docs y /)
 scripts/dev.sh                          install | run | test | simulate | apk | lint
 Dockerfile · docker-compose.yml         Despliegue en contenedor con volumen /data
 .github/workflows/ci.yml                CI: tests del backend + build del APK

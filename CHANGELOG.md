@@ -200,6 +200,18 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y
 
 ### Corregido
 
+- **La portada publicada no decía ni una función ni una clave de configuración** (`docs/index.html`):
+  el sitio se servía bien, pero quien llegaba a él tenía que abrir un documento para saber qué hace
+  el sistema o qué se puede configurar. Ahora la portada trae las **37 funciones** agrupadas en seis
+  bloques —captura, envío, resistencia, seguridad, visor y servidor— y la **configuración completa**
+  con la plantilla de las 16 claves y una tabla que explica cada una con su valor por defecto. Y
+  como es una tercera copia del mismo dato —la de la guía ya se había separado una vez—,
+  `tools/check_config.py` comprueba también que el JSON de la web sea **idéntico** a
+  `config.ejemplo.json` y que su lista de claves sea **exactamente** la del fichero: si alguien añade
+  una clave al importador y olvida la web, la CI lo dice.
+- **En un móvil, la tabla de claves era ilegible** (`docs/index.html`): las tres columnas comprimidas
+  dejaban una palabra por línea («URL del backend» ocupaba nueve líneas). Por debajo de 620 px cada
+  clave pasa a ser un bloque con sus datos debajo, sin JavaScript y sin desplazamiento horizontal.
 - **La plantilla que la guía manda copiar no traía la mitad de los ajustes** (`config.ejemplo.json`,
   `docs/CONFIGURACION.md`, `tools/check_config.py`): el fichero de ejemplo declaraba 12 claves y el
   importador entiende 18, así que copiarlo dejaba sin configurar `device.device_id`, `github.user`,

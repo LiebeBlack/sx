@@ -25,6 +25,7 @@ daría un verde vacío, que es exactamente el error que este proyecto ya ha come
 
 from __future__ import annotations
 
+import html
 import json
 import re
 import sys
@@ -35,6 +36,13 @@ ROOT = Path(__file__).resolve().parent.parent
 APP_CONFIG = ROOT / "android/app/src/main/java/com/example/telemetry/AppConfig.java"
 TEMPLATE = ROOT / "config.ejemplo.json"
 GUIDE = ROOT / "docs/CONFIGURACION.md"
+LANDING = ROOT / "docs/index.html"
+
+# La portada publicada también muestra la plantilla y la lista de claves. Es una tercera copia del
+# mismo dato, y las copias se separan solas: la de la guía ya lo hizo una vez.
+LANDING_SECTION = "Configuración completa"
+LANDING_ROW = re.compile(r"<tr><td><code>([a-z_]+)\.([a-z_]+)</code></td>")
+LANDING_PRE = re.compile(r"<pre>\s*<code[^>]*>(.*?)</code>\s*</pre>", re.DOTALL)
 
 APPLY_BODY = re.compile(
     r"private static Result apply\(Context context, JSONObject root\) \{(.*?)\n    \}", re.DOTALL
@@ -158,6 +166,46 @@ def parse_guide(text: str) -> Tuple[Set[Tuple[str, str]], List[Tuple[str, str, i
     return rows, blocks, lines
 
 
+def parse_landing(text: str) -> Tuple[object, Set[Tuple[str, str]]]:
+    """La plantilla y la lista de claves que publica la portada del sitio.
+
+    La lista se lee de la PRIMERA celda de cada fila (`<tr><td><code>bloque.clave</code></td>`):
+    en la segunda columna hay valores por defecto como `data.json`, que también parecen un
+    `bloque.clave` y colarían un falso positivo.
+    """
+    start = text.find(LANDING_SECTION)
+    if start < 0:
+        raise ValueError(f"la portada no tiene la sección «{LANDING_SECTION}»")
+    end = text.find("<h2>", start + 1)
+    section = text[start:] if end < 0 else text[start:end]
+
+    block = LANDING_PRE.search(section)
+    if block is None:
+        raise ValueError("la portada anuncia la configuración y no muestra el JSON")
+    try:
+        shown = json.loads(html.unescape(block.group(1)))
+    except json.JSONDecodeError as error:
+        raise ValueError(f"el JSON de la portada no es válido: {error}") from error
+
+    keys = set(LANDING_ROW.findall(section))
+    if not keys:
+        raise ValueError("la portada no lista ninguna clave de configuración")
+    return shown, keys
+
+
+def landing_problems(
+    template_keys: Set[Tuple[str, str]], landing_keys: Set[Tuple[str, str]], fields: Sequence[Field]
+) -> Dict[str, Set[str]]:
+    """Las tres formas en que la web puede discrepar de la plantilla."""
+    return {
+        "faltan en la web": {f"{g}.{k}" for g, k in template_keys - landing_keys},
+        "sobran en la web": {f"{g}.{k}" for g, k in landing_keys - template_keys},
+        "desconocidas": {
+            f"{g}.{k}" for g, k in landing_keys if not recognized(g, k, fields)
+        },
+    }
+
+
 def covered(field: Field, pairs: Set[Tuple[str, str]]) -> bool:
     """¿Alguna de las formas válidas de este campo está en el conjunto?"""
     return any((group, key) in pairs for group in field.groups for key in field.keys)
@@ -207,6 +255,14 @@ def calibrate() -> List[str]:
         problems.append("no detecta una clave que la guía promete y el importador no lee")
     if undocumented(fields, {("servidor", "url")}) != {"otro.total"}:
         problems.append("no detecta un campo del importador sin documentar")
+
+    template_keys = {("srv", "endpoint"), ("otro", "total")}
+    landing = landing_problems(template_keys, {("srv", "endpoint")}, fields)
+    if landing["faltan en la web"] != {"otro.total"} or landing["sobran en la web"]:
+        problems.append("no detecta una clave de la plantilla que la web no muestra")
+    invented = landing_problems(template_keys, template_keys | {("srv", "inventada")}, fields)
+    if invented["desconocidas"] != {"srv.inventada"}:
+        problems.append("no detecta una clave de la web que el importador no lee")
 
     return problems
 
@@ -296,7 +352,27 @@ def main() -> int:
             print(f"     JSON INVÁLIDO en la línea {start + 1}: {error}")
             failures += 1
 
-    print("\n7. autocalibración")
+    print("\n7. la plantilla y las claves que publica la portada")
+    try:
+        landing_data, landing_keys = parse_landing(LANDING.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        print(f"     FALLO: {error}")
+        failures += 1
+    else:
+        if landing_data != template_data:
+            print("     DESINCRONIZADA: la plantilla de la portada ya no es la de config.ejemplo.json")
+            failures += 1
+        else:
+            print("     ok  la plantilla de la portada es idéntica a config.ejemplo.json")
+        landing = landing_problems(template_pairs, landing_keys, fields)
+        for label, names in landing.items():
+            for name in sorted(names):
+                print(f"     {label.upper()}: {name}")
+                failures += 1
+        if not any(landing.values()):
+            print(f"     ok  las {len(landing_keys)} claves de la web son exactamente las de la plantilla")
+
+    print("\n8. autocalibración")
     calibration = calibrate()
     for problem in calibration:
         print(f"     CALIBRACIÓN FALLIDA: {problem}")
