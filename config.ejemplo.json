@@ -18,7 +18,7 @@
     "user": "",
     "repo": "usuario/repositorio",
     "branch": "main",
-    "path": "data/latest.json"
+    "path": "docs/data/latest.json"
   },
   "gist": {
     "token": "",
