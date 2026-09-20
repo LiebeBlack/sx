@@ -103,23 +103,25 @@ coordenadas (se crea en la primera publicación, ~1 min tras iniciar el rastreo)
 
 1. En el repo: **Settings → Pages** (barra lateral).
 2. En **Build and deployment → Source**: **Deploy from a branch**.
-3. **Branch**: `main` y la carpeta de publicación → **Save**. Las dos opciones funcionan, pero
-   publican cosas distintas:
+3. **Branch**: `main` y la carpeta de publicación → **Save**. **Las dos funcionan y las dos
+   publican el mapa**, porque el visor vive en `docs/`, la carpeta que se publica en uno de los dos
+   casos y una subcarpeta en el otro:
 
-   - **`/ (root)`** — *recomendada*: publica todo. La raíz la sirve el `index.html` de la raíz del
-     repositorio, que redirige al visualizador en vivo; el visor autónomo queda en
-     `…/frontend/gist.html`, el fichero de datos en
-     `https://TU_USUARIO.github.io/REPO/data/latest.json`, y la documentación en
-     `…/docs/doc.html` (el lector que sirve los tres documentos).
-   - **`/docs`** — publica **solo** la documentación, con la portada de `docs/index.html` y el lector
-     en `…/docs/doc.html`. El visualizador y `data/latest.json` **no** se publican: con
-     esta carpeta, la fuente «GitHub Pages (fichero)» del visor se queda sin datos y el mapa en vivo
-     se ve desde el backend (`docker compose up --build -d` → `http://localhost:8000/`).
+   - **`/docs`** — *recomendada*: es la más simple de razonar, porque lo publicado y lo que hay en
+     `docs/` son exactamente lo mismo. La raíz sirve la portada (`docs/index.html`), el mapa queda en
+     `…/mapa.html`, el visor del Gist en `…/gist.html`, el lector de documentos en `…/doc.html` y el
+     fichero de datos en `…/data/latest.json`.
+   - **`/ (root)`** — publica todo el repositorio. La raíz la sirve el `index.html` de la raíz, que
+     redirige al visor; el mapa queda en `…/docs/mapa.html`, la documentación en `…/docs/doc.html` y
+     el fichero de datos en `…/docs/data/latest.json`. El visor prueba las dos ubicaciones del
+     fichero, así que **la misma configuración del móvil vale para las dos carpetas**.
 
-> **El fallo fácil de cometer era dejar `/docs` sin portada.** La raíz del dominio respondía **404**
-> con el mensaje «For root URLs you must provide an index.html» porque la carpeta publicada no tenía
-> `index.html`; ya lo tiene, así que las dos configuraciones muestran un sitio en pie y lo único que
-> cambia es cuánto publican.
+> **Por qué el visor está dentro de `docs/`.** Antes vivía en `frontend/`, y con la carpeta `/docs`
+> —la que más gente usa— el sitio publicado no tenía visor: se servía la documentación y el mapa solo
+> se veía desde el backend. Moverlo a `docs/` hace que el mapa se publique con las dos
+> configuraciones. La contrapartida: **el fichero de datos también tiene que estar dentro de `docs/`**
+> (`docs/data/latest.json`, que es el valor por defecto), porque un fichero en la raíz del repositorio
+> solo lo sirve Pages si publicas `/ (root)`.
 4. Espera ~1 minuto. En **Settings → Pages** aparecerá la URL pública:
    `https://TU_USUARIO.github.io/telemetria/`.
 
@@ -131,13 +133,14 @@ coordenadas (se crea en la primera publicación, ~1 min tras iniciar el rastreo)
 
 ## Paso 5 · Abrir la web y elegir la fuente GitHub
 
-1. Abre `https://TU_USUARIO.github.io/telemetria/`. Con la carpeta `/ (root)` la raíz redirige al
-   visualizador en vivo y el visor autónomo del canal Gist está en `…/frontend/gist.html`; con la
-   carpeta `/docs` la raíz muestra la portada de la documentación, y el mapa se ve desde el backend
-   (`http://localhost:8000/`).
+1. Abre `https://TU_USUARIO.github.io/telemetria/`. Con la carpeta `/docs` verás la portada del
+   sitio, y el **mapa en `…/mapa.html`** (enlazado desde la portada). Con `/ (root)` la raíz redirige
+   directamente al visor. En las dos, `doc.html` sirve la documentación y `gist.html` el visor
+   autónomo del Gist.
 2. En el desplegable de fuente, cambia **API en vivo** por **GitHub Pages (fichero)**.
-   - Desde el propio dominio de Pages la ruta por defecto ya es correcta (deduce
-     `/<repo>/data/latest.json` de la URL actual): cero configuración, cero CORS.
+   - Desde el propio dominio de Pages la ruta por defecto ya es correcta: deduce la base del
+     repositorio de la URL actual y prueba el fichero en las dos ubicaciones posibles
+     (`/<repo>/docs/data/latest.json` y `/<repo>/data/latest.json`). Cero configuración, cero CORS.
    - Para leer **otro** repo desde esta web: escribe `https://OTRO_USUARIO.github.io/otro_repo`
      en el campo **API** y mantén la fuente GitHub — el visualizador añadirá la ruta del fichero
      automáticamente.
