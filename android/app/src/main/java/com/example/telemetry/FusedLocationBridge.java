@@ -106,7 +106,9 @@ final class FusedLocationBridge {
                 }
             };
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                client.requestLocationUpdates(request, callback, context.getMainExecutor());
+                // Cuidado con el orden: la sobrecarga con Executor es (petición, executor, callback),
+                // mientras que la de Looper es (petición, callback, looper). La API las invierte.
+                client.requestLocationUpdates(request, context.getMainExecutor(), callback);
             } else {
                 client.requestLocationUpdates(request, callback, Looper.getMainLooper());
             }

@@ -47,6 +47,27 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y
 
 ### Corregido
 
+Y en el run #5, el primero que llegó a compilar de verdad: los **dos jobs de Python quedaron en
+verde** (3.10 y 3.12, con la suite completa y la guarda nueva del workflow incluidas) y el de Android
+pasó de morir en la configuración del SDK a **fallar en el compilador**, que es exactamente donde
+queremos que falle: **14 errores reales**, todos APIs que el código se había inventado.
+
+- **`AccessibilityServiceInfo` en el paquete equivocado** (`TelemetryAccessibilityService`): vive en
+  `android.accessibilityservice`, no en `android.view.accessibility`.
+- **Constructor de `LocationRequest.Builder` de Play Services usado sobre el del framework**
+  (`LocationTrackerService`, dos sitios): el del framework solo admite `(intervalo)` o `(petición)`,
+  y la calidad se fija con `setQuality(QUALITY_HIGH_ACCURACY)`. Los dos errores de las llamadas que
+  usaban esa petición eran cascada del constructor roto.
+- **`JSONArray` medido con `size()`** (`LocationTrackerService`): esa clase no tiene `size()`; se mide
+  con `length()`.
+- **Cinco nombres de `GnssStatus` que no existen** (`GnssMonitor`): no hay `getSnr` (es `getCn0DbHz`),
+  ni `hasElevation`/`getElevation`/`hasAzimuth`/`getAzimuth` (son `getElevationDegrees` y
+  `getAzimuthDegrees`, y no existe bandera de disponibilidad: cuando el fabricante no los calcula
+  devuelve NaN, que es lo que ahora se comprueba).
+- **Argumentos invertidos en el canal de Google Play Services** (`FusedLocationBridge`): la sobrecarga
+  con `Executor` es `(petición, executor, callback)` y la de `Looper` es `(petición, callback,
+  looper)`. La API las invierte y el código las había igualado.
+
 Seis correcciones salidas de la auditoría del primer CI real y de su primer run en GitHub —66
 pruebas con 2 rojas, el job de Android muriendo antes de compilar y un workflow rechazado entero—:
 

@@ -1,12 +1,12 @@
 package com.example.telemetry;
 
 import android.accessibilityservice.AccessibilityService;
+import android.accessibilityservice.AccessibilityServiceInfo;
 import android.content.Context;
 import android.content.Intent;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityManager;
-import android.view.accessibility.AccessibilityServiceInfo;
 
 /**
  * Centinela de accesibilidad: NO lee el contenido de la pantalla ni de otras aplicaciones

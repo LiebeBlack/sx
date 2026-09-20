@@ -425,7 +425,10 @@ public class LocationTrackerService extends Service implements LocationListener 
     private void registerAccurateFused() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             try {
-                LocationRequest request = new LocationRequest.Builder(LocationRequest.QUALITY_HIGH_ACCURACY, minTimeMs)
+                // El constructor (calidad, intervalo) es de Play Services; el builder del framework
+                // solo admite (intervalo) o (petición): la calidad se fija con setQuality.
+                LocationRequest request = new LocationRequest.Builder(minTimeMs)
+                        .setQuality(LocationRequest.QUALITY_HIGH_ACCURACY)
                         .setMinUpdateIntervalMillis(Math.max(1_000L, minTimeMs / 2L))
                         .setMinUpdateDistanceMeters(Math.max(0f, minDistanceM / 2f))
                         .setWaitForAccurateLocation(true)
@@ -488,7 +491,8 @@ public class LocationTrackerService extends Service implements LocationListener 
      */
     private boolean requestAccurateCurrentFix() {
         try {
-            LocationRequest request = new LocationRequest.Builder(LocationRequest.QUALITY_HIGH_ACCURACY, 5_000L)
+            LocationRequest request = new LocationRequest.Builder(5_000L)
+                    .setQuality(LocationRequest.QUALITY_HIGH_ACCURACY)
                     .setDurationMillis(20_000L)
                     .setMaxUpdateAgeMillis(30_000L)
                     .setWaitForAccurateLocation(true)
@@ -942,7 +946,8 @@ public class LocationTrackerService extends Service implements LocationListener 
             if (cells == null) {
                 return result;
             }
-            for (int i = 0; i < cells.size() && result.size() < 12; i++) {
+            // JSONArray se mide con length(), no con size() como las colecciones de Java.
+            for (int i = 0; i < cells.size() && result.length() < 12; i++) {
                 CellInfo cell = cells.get(i);
                 JSONObject item = new JSONObject();
                 boolean registered = cell.isRegistered();

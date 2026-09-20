@@ -87,7 +87,9 @@ public class GnssMonitor extends GnssStatus.Callback {
         JSONArray sats = new JSONArray();
 
         for (int i = 0; i < count; i++) {
-            double snr = status.getSnr(i);
+            // getCn0DbHz es el nombre real de la medida en la API (relación portadora/ruido en
+            // dB-Hz); no existe ningún getSnr.
+            double snr = status.getCn0DbHz(i);
             boolean usedInFix = status.usedInFix(i);
             String name = constellationName(status.getConstellationType(i));
             if (usedInFix) {
@@ -114,11 +116,15 @@ public class GnssMonitor extends GnssStatus.Callback {
                     sat.put("svid", status.getSvid(i));
                     sat.put("cn0", round(snr));
                     sat.put("used", usedInFix);
-                    if (status.hasElevation(i)) {
-                        sat.put("elev", Math.round(status.getElevation(i)));
+                    // GnssStatus no expone «¿hay elevación/azimut?»: cuando el fabricante no los
+                    // calcula devuelve NaN, y ese es el único aviso disponible.
+                    double elevacion = status.getElevationDegrees(i);
+                    if (!Double.isNaN(elevacion)) {
+                        sat.put("elev", Math.round(elevacion));
                     }
-                    if (status.hasAzimuth(i)) {
-                        sat.put("azim", Math.round(status.getAzimuth(i)));
+                    double azimut = status.getAzimuthDegrees(i);
+                    if (!Double.isNaN(azimut)) {
+                        sat.put("azim", Math.round(azimut));
                     }
                     sats.put(sat);
                 } catch (JSONException e) {
