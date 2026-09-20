@@ -446,7 +446,9 @@ public class LocationTrackerService extends Service implements LocationListener 
             }
         }
         try {
-            locationManager.requestLocationUpdates(FUSED_PROVIDER, minTimeMs, minDistanceM, this, Looper.getMainLooper());
+            // El respaldo usa el nombre exacto que llegó por parámetro, no la constante: en un
+            // dispositivo que lo llame de otra forma, la constante no existiría y esto fallaría.
+            locationManager.requestLocationUpdates(provider, minTimeMs, minDistanceM, this, Looper.getMainLooper());
         } catch (Exception e) {
             Log.w(TAG, "proveedor fusionado no disponible: " + e.getMessage());
         }
