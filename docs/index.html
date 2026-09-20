@@ -242,7 +242,7 @@
     "user": "",
     "repo": "usuario/repositorio",
     "branch": "main",
-    "path": "data/latest.json"
+    "path": "docs/data/latest.json"
   },
   "gist": {
     "token": "",
@@ -292,8 +292,9 @@
       <td>Repositorio destino del fichero. Debe tener la forma <code>usuario/repositorio</code>.</td></tr>
     <tr><td><code>github.branch</code></td><td><code>main</code></td>
       <td>Rama donde se escribe el fichero.</td></tr>
-    <tr><td><code>github.path</code></td><td><code>data/latest.json</code></td>
-      <td>Ruta del fichero dentro del repositorio: el que lee el visor en modo Pages (fichero).</td></tr>
+    <tr><td><code>github.path</code></td><td><code>docs/data/latest.json</code></td>
+      <td>Ruta del fichero dentro del repositorio: el que lee el visor en modo Pages (fichero). Va dentro
+      de <code>docs/</code> porque es la carpeta que Pages publica.</td></tr>
     <tr><td><code>gist.token</code></td><td>vacío:<br>usa el de <code>github</code></td>
       <td>Token con permiso <code>Gists: read and write</code>, si es distinto del anterior.</td></tr>
     <tr><td><code>gist.id</code></td><td>vacío</td>

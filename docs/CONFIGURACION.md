@@ -84,7 +84,7 @@ lo que no pongas conserva el valor que ya tuviera el teléfono):
     "user": "",
     "repo": "usuario/repositorio",
     "branch": "main",
-    "path": "data/latest.json"
+    "path": "docs/data/latest.json"
   },
   "gist": {
     "token": "",
@@ -155,7 +155,7 @@ Dos avisos sobre la plantilla, porque son los dos errores fáciles:
 | `repo` | texto | no | `usuario/mi-repo` | Repositorio destino, en formato `usuario/repositorio`. Si lo reparte en dos claves (`user` + `repo`), también lo entiende. |
 | `user` | texto | no | `usuario` | Solo tiene sentido junto a un `repo` escrito **sin** la barra: se combinan en `usuario/repositorio`. Si el `repo` ya trae la barra, esta clave no se usa. |
 | `branch` | texto | no | `main` | Rama donde se escribe el fichero. |
-| `path` | texto | no | `data/latest.json` | Ruta del fichero dentro del repositorio. Es el que lee el visor en modo «GitHub Pages (fichero)». |
+| `path` | texto | no | `docs/data/latest.json` | Ruta del fichero dentro del repositorio. Va **dentro de `docs/`** porque es la carpeta que publica GitHub Pages: un fichero en la raíz no lo sirve el sitio y el visor no lo vería. Es el que lee el modo «GitHub Pages (fichero)». |
 
 ### Bloque `gist` — histórico sin repositorio (opcional)
 
