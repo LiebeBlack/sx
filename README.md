@@ -73,6 +73,7 @@ tools/check_frontend.py                 Valida el JS embebido de los dos visores
 tools/gist_schema.py                    Contrato del canal Gist: validador y fusión de referencia
 tests/test_api.py · tests/test_fusion.py  Tests de endpoints, filtros y fusion
 tests/test_gist_schema.py               Tests del contrato y de las reglas de fusión del Gist
+tests/test_workflow.py                  Sintaxis de los workflows (un YAML inválido no ejecuta nada)
  docs/API.md                            Referencia de endpoints con ejemplos curl
  docs/SETUP.md                          Puesta en producción completa (token, Pages, espejo)
 scripts/dev.sh                          install | run | test | simulate | apk | lint

@@ -47,8 +47,8 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y
 
 ### Corregido
 
-Cuatro correcciones salidas de la auditoría del primer CI real (66 pruebas, 2 rojas, y el job de
-Android muriendo antes de compilar):
+Seis correcciones salidas de la auditoría del primer CI real y de su primer run en GitHub —66
+pruebas con 2 rojas, el job de Android muriendo antes de compilar y un workflow rechazado entero—:
 
 - **Recorrido inventado por un fix de baja calidad** (`backend/app.py`): la puerta que decide si un
   punto suma distancia solo miraba `outlier` y `gap`, aunque la marca `low_quality` ya se calculaba
@@ -68,6 +68,15 @@ Android muriendo antes de compilar):
   infinita y los paquetes (`platforms;android-35`, `build-tools;35.0.0`) se instalan explícitamente.
   Además, la comprobación de sintaxis del JavaScript se ejecuta **antes** de los tests: estaba
   después y nunca llegaba a correr en las CI rojas, así que el JS quedaba sin verificar.
+- **Un dos puntos invalidaba el workflow entero** (`.github/workflows/ci.yml#L45`): el nombre de paso
+  `SDK de Android: licencias y paquetes` metía «: » dentro de un escalar simple de YAML, que es
+  justo lo que la sintaxis prohíbe. GitHub rechazó el fichero con «Invalid workflow file» y creó un
+  run con **cero jobs** —de ahí el «no runs» engañoso de la interfaz y de que la compilación ni se
+  evaluara—. El paso se llama ahora `Licencias y paquetes del SDK de Android`.
+- **Guarda contra esa clase de fallo** (`tests/test_workflow.py`): un lint del subconjunto de YAML que
+  usa un workflow —tabuladores, indentación y «: » en escalares simples, respetando comillas y los
+  bloques `run: |`— recorre `.github/workflows/*.yml` en cada CI. Está calibrado contra el fichero
+  roto: lo marca en la línea exacta que señaló GitHub.
 
 Cinco fallos reales encontrados en una revisión del propio código nuevo, antes de darlo por bueno:
 

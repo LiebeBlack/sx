@@ -42,7 +42,10 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - name: SDK de Android: licencias y paquetes
+      # Ojo con los nombres de paso: un escalar simple de YAML no admite ': ' dentro del valor,
+      # así que «SDK de Android: licencias» convertía el workflow entero en inválido (L45) y
+      # GitHub creaba un run con cero jobs en lugar de fallar por compilación.
+      - name: Licencias y paquetes del SDK de Android
         # Antes se usaba android-actions/setup-android@v3 y su aceptación automática de licencias
         # dejaba el prompt de sdkmanager sin responder: el job moría a los 11 s y Gradle no llegaba
         # a ejecutarse ni una sola vez. Aquí las licencias se aceptan con entrada infinita ('yes') y
