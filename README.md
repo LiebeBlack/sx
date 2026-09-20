@@ -70,6 +70,7 @@ backend/github_mirror.py                Espejo del estado a GitHub (Contents API
 android/.../GithubPublisher.java        Publicación directa del móvil a GitHub (Wi-Fi o datos)
 frontend/index.html                     Visualizador Vanilla JS + Leaflet (OLED, auto-fetch 3 s, 2 trazas, 2 fuentes)
 frontend/gist.html                      Visor del canal Gist (autónomo, sin librerías, dedupe por timestamp_ms)
+index.html                              Portada del sitio de Pages: redirige al visualizador en vivo
 tools/simulate.py                       Generador de trafico sintetico (--noisy)
 tools/check_frontend.py                 Valida el JS embebido de los dos visores con node --check
 tools/gist_schema.py                    Contrato del canal Gist: validador y fusión de referencia
