@@ -18,6 +18,7 @@
 -->
 <style>
   :root {
+    color-scheme: dark;
     --cyan: #00ffff;
     --purple: #800080;
     --cyan-dim: rgba(0, 255, 255, 0.55);
@@ -55,6 +56,25 @@
   }
   ul { padding-left: 18px; }
   li { margin: 7px 0; }
+  h3 {
+    font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--cyan-dim); margin: 0 0 8px;
+  }
+  .funcs { display: grid; gap: 22px 26px; grid-template-columns: repeat(auto-fit, minmax(255px, 1fr)); }
+  .funcs ul { padding-left: 16px; font-size: 13px; }
+  pre {
+    border: 1px solid var(--purple); background: rgba(0, 255, 255, 0.04);
+    padding: 14px 16px; overflow-x: auto; margin: 14px 0; font-size: 12.5px;
+  }
+  pre code { background: none; padding: 0; }
+  .tablewrap { overflow-x: auto; margin: 14px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th, td { border: 1px solid var(--cyan-faint); padding: 7px 10px; text-align: left; vertical-align: top; }
+  th {
+    color: var(--cyan); background: rgba(0, 255, 255, 0.06); font-weight: normal;
+    letter-spacing: 0.08em; text-transform: uppercase; font-size: 11px;
+  }
+  td code { white-space: nowrap; }
   footer {
     margin-top: 34px; border-top: 1px solid var(--purple); padding-top: 12px;
     color: var(--purple); font-size: 12px;
@@ -89,6 +109,193 @@
     </a>
   </div>
 
+  <h2>Funciones</h2>
+  <p>Lo que hace el sistema, bloque por bloque. Cada función está en el código y explicada en su
+  documento: <a href="doc.html?f=SETUP.md">puesta en marcha</a>,
+  <a href="doc.html?f=API.md">API</a> y <a href="doc.html?f=CONFIGURACION.md">configuración</a>.</p>
+
+  <div class="funcs">
+    <section>
+      <h3>Captura en el móvil</h3>
+      <ul>
+        <li>GPS, red, pasivo y el <strong>motor fusionado de Google</strong> a la vez, con fix inmediato
+          al arrancar sin esperar señal.</li>
+        <li>Motor fusionado también en Android 11 y anteriores; sin servicios de Google se sigue con el
+          del sistema.</li>
+        <li>GNSS completo: satélites visibles y en uso, SNR y <strong>detalle por satélite</strong>
+          (elevación, azimut, C/N0) para auditar un fix malo.</li>
+        <li>Wi-Fi RTT (802.11mc): distancia <strong>real</strong> al punto de acceso, en decímetros.</li>
+        <li>Barómetro y altitud sobre el nivel del mar (geoidal), más estables que la altitud GPS.</li>
+        <li>Brújula con <strong>rumbo verdadero</strong> (declinación magnética) y podómetro.</li>
+        <li>Actividad y movimiento: still · walking · running · vehicle.</li>
+        <li>Wi-Fi (AP conectado y 16 vecinos) y celdas LTE/GSM/WCDMA con MCC/MNC/CID/TAC/PCI/RSRP.</li>
+        <li>Modo de recursos bajos automático en Android Go o con 1 GB de RAM.</li>
+        <li>Un solo punto por instante: si dos proveedores coinciden, se queda el mejor.</li>
+        <li>Filtro a bordo: los saltos imposibles y los fixes malos no llegan a salir.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h3>Envío, sin perder nada</h3>
+      <ul>
+        <li>Servidor propio: lotes por tiempo, por distancia <strong>o</strong> por mejora clara de
+          precisión en el mismo sitio.</li>
+        <li>Cola en disco: sin cobertura no se pierde nada, y al volver se vacía al instante.</li>
+        <li><strong>GitHub directo</strong>: un fichero en tu repositorio, sin servidor ni base de datos.</li>
+        <li><strong>Gist</strong>: histórico con fusión por <code>timestamp_ms</code>, para que varios
+          móviles publicen en el mismo fichero sin pisarse.</li>
+        <li>Contadores de enviados, fallidos y descartados, a la vista en la app.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h3>Resistencia</h3>
+      <ul>
+        <li><strong>Watchdog</strong>: relanza el servicio si el sistema lo mata.</li>
+        <li>Arranque automático tras reiniciar el teléfono.</li>
+        <li>Registro de errores en <code>error.json</code>, con la pila, el estado y el recorrido del día.</li>
+        <li><strong>Cadena de custodia</strong>: apagado, modo avión, reinicio y actualización, anotados
+          con su hora y solo con el rastreo activo.</li>
+        <li>La pantalla dice en todo momento qué pasa: servicio, cola, última subida y errores.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h3>Seguridad</h3>
+      <ul>
+        <li>Código de acceso de 4 a 12 dígitos, guardado con <strong>SHA-256 y sal</strong>: nunca en
+          claro, y no se puede reconstruir desde la huella.</li>
+        <li>5 intentos y espera creciente, con un segundo reloj que <strong>no se puede mover desde
+          Ajustes</strong>.</li>
+        <li>Protección contra desinstalación: administrador de dispositivos y centinela de accesibilidad.</li>
+        <li>Todo configurable desde un fichero, sin tocar la pantalla.</li>
+        <li>Los tokens viven en el teléfono; el código de seguridad <strong>nunca</strong> se exporta.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h3>Visor web</h3>
+      <ul>
+        <li>Mapa con la traza filtrada (Kalman) y la posición en vivo.</li>
+        <li><strong>Distancia de hoy y por día</strong>, distancia total, velocidad máxima, precisión
+          media y ruido quitado.</li>
+        <li>Exportación a CSV y una tarjeta por dispositivo.</li>
+        <li>Se maneja con el teclado y avisa si el CDN del mapa no carga.</li>
+        <li>Dos modos sin backend: fichero publicado en Pages y Gist.</li>
+        <li>Lector de la documentación propio (<code>docs/doc.html</code>), sin librerías.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h3>Servidor</h3>
+      <ul>
+        <li><code>POST /api/location</code>: ingesta por lotes, hasta 500 puntos.</li>
+        <li><code>GET /api/locations</code>: historial, formato compacto, por dispositivo,
+          <code>since</code> y <code>latest</code>.</li>
+        <li><code>DELETE /api/locations/&lt;dispositivo&gt;</code> y <code>GET /api/health</code> con los
+          umbrales activos.</li>
+        <li>Filtrado y fusión: saltos, precisión, huecos, duplicados y ruido quitado.</li>
+        <li>Espejo opcional a GitHub y almacenamiento en JSONL.</li>
+      </ul>
+    </section>
+  </div>
+
+  <h2>Configuración completa</h2>
+  <p>Un solo fichero, ni un campo a mano. Se escribe en el ordenador —o se exporta desde otro
+  teléfono—, se copia a <code>Descargas/Telemetria/config.json</code> y la app <strong>lo aplica sola al
+  abrirse</strong>. Se aplica una vez por contenido (huella SHA-256, así que abrir la app cien veces no
+  reescribe nada) y lo que no se entienda se avisa <strong>con su motivo</strong>, nunca en silencio.
+  Lo que dejes fuera conserva el valor que ya tuviera el teléfono.</p>
+
+  <pre><code>{
+  "version": 1,
+  "server": {
+    "endpoint": "https://mi-servidor.ejemplo.com/api/location",
+    "api_key": ""
+  },
+  "device": {
+    "device_id": "",
+    "label": "Teléfono de campo"
+  },
+  "tracking": {
+    "interval_seconds": 5,
+    "distance_meters": 5,
+    "enabled": false
+  },
+  "github": {
+    "token": "",
+    "user": "",
+    "repo": "usuario/repositorio",
+    "branch": "main",
+    "path": "data/latest.json"
+  },
+  "gist": {
+    "token": "",
+    "id": "",
+    "file": "data.json"
+  },
+  "security": {
+    "pin": ""
+  }
+}</code></pre>
+
+  <p>La plantilla lista para copiar es <code>config.ejemplo.json</code>, y cada clave está explicada
+  campo por campo en <a href="doc.html?f=CONFIGURACION.md">Configurar el móvil</a>. Este es el resumen
+  de las 16 claves:</p>
+
+  <div class="tablewrap">
+  <table>
+    <tr><th>Clave</th><th>Por defecto</th><th>Qué hace</th></tr>
+    <tr><td><code>server.endpoint</code></td><td><code>https://mi-servidor.ejemplo.com</code></td>
+      <td>URL del backend. Tiene que empezar por <code>http://</code> o <code>https://</code>; si no,
+      se ignora y se avisa. El cliente añade <code>/api/location</code>.</td></tr>
+    <tr><td><code>server.api_key</code></td><td>vacío</td>
+      <td>Clave compartida con el servidor (<code>TELEMETRY_API_KEY</code>). Se envía en la cabecera
+      <code>X-Api-Key</code> de cada lote.</td></tr>
+    <tr><td><code>device.device_id</code></td><td>vacío:<br>la app genera <code>android-&lt;hex&gt;</code></td>
+      <td>Quién es el teléfono. <strong>Vacío significa «no lo toques»</strong>, para que copiar la
+      plantilla en varios equipos no los iguale. Admite letras, números, <code>-</code>, <code>_</code>
+      y <code>.</code></td></tr>
+    <tr><td><code>device.label</code></td><td>el modelo del teléfono</td>
+      <td>Nombre que se ve en el visor. Máximo 60 caracteres.</td></tr>
+    <tr><td><code>tracking.interval_seconds</code></td><td>5</td>
+      <td>Intervalo mínimo entre envíos, de 1 a 3600 segundos. Más segundos es menos batería. También
+      acepta <code>min_time_ms</code>.</td></tr>
+    <tr><td><code>tracking.distance_meters</code></td><td>5</td>
+      <td>Distancia mínima para considerar un punto nuevo. <code>0</code> guarda todo; el máximo es
+      10000.</td></tr>
+    <tr><td><code>tracking.enabled</code></td><td><code>false</code></td>
+      <td>Deja el rastreo <strong>marcado como activo</strong>: al abrir la app se reanuda y el watchdog
+      lo relanza tras un reinicio. No arranca el servicio por sí solo.</td></tr>
+    <tr><td><code>github.token</code></td><td>vacío</td>
+      <td>Token <em>fine-grained</em> con permiso <code>Contents: read and write</code> sobre ese
+      repositorio. Sin token, el canal queda desactivado.</td></tr>
+    <tr><td><code>github.user</code></td><td>vacío</td>
+      <td>Solo junto a un <code>repo</code> escrito sin barra: se combinan en
+      <code>usuario/repositorio</code>.</td></tr>
+    <tr><td><code>github.repo</code></td><td><code>usuario/repositorio</code></td>
+      <td>Repositorio destino del fichero. Debe tener la forma <code>usuario/repositorio</code>.</td></tr>
+    <tr><td><code>github.branch</code></td><td><code>main</code></td>
+      <td>Rama donde se escribe el fichero.</td></tr>
+    <tr><td><code>github.path</code></td><td><code>data/latest.json</code></td>
+      <td>Ruta del fichero dentro del repositorio: el que lee el visor en modo Pages (fichero).</td></tr>
+    <tr><td><code>gist.token</code></td><td>vacío:<br>usa el de <code>github</code></td>
+      <td>Token con permiso <code>Gists: read and write</code>, si es distinto del anterior.</td></tr>
+    <tr><td><code>gist.id</code></td><td>vacío</td>
+      <td>ID del Gist —o su URL completa, que se normaliza—. <strong>Vacío = canal desactivado.</strong></td></tr>
+    <tr><td><code>gist.file</code></td><td><code>data.json</code></td>
+      <td>Nombre del fichero dentro del Gist.</td></tr>
+    <tr><td><code>security.pin</code></td><td>vacío</td>
+      <td>Define o cambia el código de la pantalla: de 4 a 12 <strong>dígitos</strong>. Vacío no cambia
+      nada. Para <strong>quitar</strong> un código se escribe <code>lock</code> a mano —no está en la
+      plantilla a propósito, porque borraría el código de un teléfono que ya lo tenga—.</td></tr>
+  </table>
+  </div>
+
+  <p>Además se puede <strong>exportar</strong> la configuración del teléfono a un fichero y
+  <strong>importarla</strong> en otro con el selector del sistema; el código de seguridad no viaja en
+  ese fichero.</p>
+
   <h2>Mapa en vivo</h2>
   <p>El visualizador está en <code>frontend/index.html</code> y hay dos formas de verlo:</p>
   <ul>
@@ -104,12 +311,6 @@
   servido por este mismo sitio y lleva su propio índice. El visor del canal Gist —lectura cada 3 s
   con <em>cache-busting</em> y deduplicación por <code>timestamp_ms</code>— vive en
   <code>frontend/gist.html</code>, dentro del repositorio.</p>
-
-  <h2>Configurar en un minuto</h2>
-  <p>La app lee <code>Descargas/Telemetria/config.json</code> al abrirse y aplica lo que traiga, sin
-  tocar un solo campo. La plantilla está en <code>config.ejemplo.json</code> y el significado de cada
-  clave, en <a href="doc.html?f=CONFIGURACION.md">Configurar el móvil</a>. Las claves que se dejen fuera
-  conservan su valor y lo que no se entienda se avisa con el motivo, nunca en silencio.</p>
 
   <h2>Estado de la compilación</h2>
   <p>
