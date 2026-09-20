@@ -157,7 +157,9 @@ class IngestTest(unittest.TestCase):
         meta = telemetry._meta["dev-test"]
         self.assertLess(spread([p["smooth_lat"] for p in series]), spread([p["lat"] for p in series]) * 0.85)
         self.assertLess(meta["distance_m"], meta["raw_distance_m"] * 0.9)
-        self.assertGreater(meta["noise_removed_m"], 0.0)
+        # noise_removed_m no se acumula en _meta (que guarda las dos distancias): vive en el informe
+        # que se publica, así que la prueba lo lee de donde existe de verdad.
+        self.assertGreater(telemetry._summary(meta)["noise_removed_m"], 0.0)
 
     def test_marca_y_conserva_la_posicion_filtrada_de_cada_punto(self):
         telemetry._ingest(sample(accuracy=5.0))

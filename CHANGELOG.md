@@ -47,6 +47,28 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y
 
 ### Corregido
 
+Cuatro correcciones salidas de la auditoría del primer CI real (66 pruebas, 2 rojas, y el job de
+Android muriendo antes de compilar):
+
+- **Recorrido inventado por un fix de baja calidad** (`backend/app.py`): la puerta que decide si un
+  punto suma distancia solo miraba `outlier` y `gap`, aunque la marca `low_quality` ya se calculaba
+  unas líneas antes. Un fix de 500 m de precisión sumaba 0,07 m de trayecto ficticio. Ahora la
+  condición es `low_quality or gap`, que cubre los tres casos con una sola comprobación porque los
+  outliers ya se marcan también como `low_quality`.
+- **`noise_removed_m` solo existía en el informe** (`tests/test_fusion.py`): la prueba lo leía de
+  `_meta`, donde no vive porque se deriva al publicar. La prueba lo lee ahora de `_summary()`. El
+  comportamiento que verificaba —el filtro reduce el ruido más de un 10 %— ya pasaba; lo que fallaba
+  era el nombre del campo consultado.
+- **Descriptor sin cerrar al servir el visor** (`tests/test_api.py`): `send_file` deja el fichero
+  abierto hasta que alguien cierra la respuesta, y la prueba no lo hacía (`ResourceWarning` en CI).
+- **El job de Android nunca llegaba a compilar** (`.github/workflows/ci.yml`): la aceptación
+  automática de licencias de `android-actions/setup-android@v3` dejaba el prompt de `sdkmanager` sin
+  responder y el job moría a los 11 s, **antes de que Gradle se ejecutara una sola vez**: ninguna
+  línea del código Android se había compilado jamás. Las licencias se aceptan ahora con entrada
+  infinita y los paquetes (`platforms;android-35`, `build-tools;35.0.0`) se instalan explícitamente.
+  Además, la comprobación de sintaxis del JavaScript se ejecuta **antes** de los tests: estaba
+  después y nunca llegaba a correr en las CI rojas, así que el JS quedaba sin verificar.
+
 Cinco fallos reales encontrados en una revisión del propio código nuevo, antes de darlo por bueno:
 
 - **El incidente nuevo no se insertaba nunca** en el documento: el cálculo de repeticiones devolvía

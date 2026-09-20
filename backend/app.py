@@ -396,8 +396,11 @@ def _ingest(point: Dict[str, Any]) -> Dict[str, Any]:
             prev_lng = prev.get("smooth_lng", prev["lng"])
             filtered = _haversine(prev_lat, prev_lng, smooth_lat, smooth_lng)
             point["raw_distance_m"] = round(raw, 2)
-            # ni los saltos ni los tramos tras un hueco suman recorrido: no son trayecto real
-            point["distance_m"] = 0.0 if (point.get("outlier") or gap) else round(filtered, 2)
+            # Ni los saltos, ni los fixes peores que MAX_TRUSTED_ACCURACY_M, ni los tramos tras un
+            # hueco suman recorrido: no son trayecto real. Los outliers ya se marcan también como
+            # low_quality, así que una sola puerta cubre los tres casos (antes, un fix de 500 m de
+            # precisión sumaba 0,07 m de recorrido inventado).
+            point["distance_m"] = 0.0 if (point.get("low_quality") or gap) else round(filtered, 2)
 
             if point.get("speed_mps") is None:
                 kalman = meta.get("kf")

@@ -26,21 +26,42 @@ jobs:
         run: pip install -r backend/requirements.txt
       - name: Comprobación de sintaxis
         run: python -m compileall -q backend tools tests
+      - name: Sintaxis del JavaScript del visualizador
+        # Antes de los tests a propósito: estaba después, así que cada CI roja por la suite dejaba
+        # la sintaxis del JavaScript sin verificar. Ahora se comprueba siempre.
+        run: python tools/check_frontend.py
       - name: Tests
         run: python -m unittest discover -s tests -v
-      - name: Sintaxis del JavaScript del visualizador
-        run: python tools/check_frontend.py
 
   android:
     name: APK de depuración
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
-      - uses: android-actions/setup-android@v3
+      - name: SDK de Android: licencias y paquetes
+        # Antes se usaba android-actions/setup-android@v3 y su aceptación automática de licencias
+        # dejaba el prompt de sdkmanager sin responder: el job moría a los 11 s y Gradle no llegaba
+        # a ejecutarse ni una sola vez. Aquí las licencias se aceptan con entrada infinita ('yes') y
+        # los paquetes se instalan explícitamente, de modo que el primer fallo real sea de
+        # compilación y no de infraestructura.
+        run: |
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          CMDLINE="$SDK/cmdline-tools/latest/bin"
+          if [ ! -x "$CMDLINE/sdkmanager" ]; then
+            echo "::error::no se encontró sdkmanager en $CMDLINE"
+            ls -la "$SDK" || true
+            exit 1
+          fi
+          echo "$CMDLINE" >> "$GITHUB_PATH"
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          yes | "$CMDLINE/sdkmanager" --licenses > /dev/null || true
+          "$CMDLINE/sdkmanager" --install "platforms;android-35" "build-tools;35.0.0"
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"

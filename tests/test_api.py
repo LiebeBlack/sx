@@ -126,8 +126,13 @@ class ApiSinClaveTest(unittest.TestCase):
 
     def test_sirve_el_visualizador(self):
         response = self.client.get("/")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("TELEMETRÍA", response.get_data(as_text=True))
+        try:
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("TELEMETRÍA", response.get_data(as_text=True))
+        finally:
+            # El visor se sirve con send_file: sin cerrar la respuesta, el descriptor del fichero
+            # queda abierto hasta que el recolector lo note (ResourceWarning en CI).
+            response.close()
 
 
 class ApiConClaveTest(unittest.TestCase):
