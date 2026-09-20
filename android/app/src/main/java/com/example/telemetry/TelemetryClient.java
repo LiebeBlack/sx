@@ -490,15 +490,11 @@ public final class TelemetryClient {
         }
         lastPersistAt = now;
         JSONArray array = new JSONArray();
-        try {
-            for (Iterator<JSONObject> it = queue.iterator(); it.hasNext(); ) {
-                array.put(it.next());
-            }
-        } catch (JSONException e) {
-            // JSON no admite NaN ni infinito: si un punto de la cola no serializa se pierde el espejo
-            // en disco, pero la cola en memoria —que es la autoridad— sigue intacta y el hilo vive.
-            Log.w(TAG, "cola no serializable para el espejo: " + e.getMessage());
-            return;
+        // Sin try/catch a propósito: `JSONArray.put(Object)` no declara JSONException —solo las
+        // sobrecargas numéricas y todos los `JSONObject.put` lo hacen— así que envolverlo no
+        // compila («exception JSONException is never thrown»).
+        for (Iterator<JSONObject> it = queue.iterator(); it.hasNext(); ) {
+            array.put(it.next());
         }
         prefs.edit().putString(KEY_QUEUE, array.toString()).apply();
     }

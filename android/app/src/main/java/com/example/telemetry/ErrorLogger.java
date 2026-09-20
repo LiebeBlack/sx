@@ -667,7 +667,7 @@ public final class ErrorLogger {
         return incident;
     }
 
-    private static JSONArray stackOf(Throwable error) throws JSONException {
+    private static JSONArray stackOf(Throwable error) {
         JSONArray stack = new JSONArray();
         if (error == null) {
             return stack;
@@ -686,7 +686,7 @@ public final class ErrorLogger {
         return stack;
     }
 
-    private static JSONArray causesOf(Throwable error) throws JSONException {
+    private static JSONArray causesOf(Throwable error) {
         JSONArray causes = new JSONArray();
         Throwable cause = error == null ? null : error.getCause();
         int depth = 0;

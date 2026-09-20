@@ -59,7 +59,11 @@ mismo código—, así que además se auditó el patrón completo a mano:
   dos sitios): el flag es del cliente de Play Services, y el builder de `android.location` solo
   acepta `(intervalo)` o `(petición)`, con la calidad en `setQuality`. Las dos peticiones usan ahora
   métodos que el compilador ya había validado (`setQuality`, `setMinUpdateIntervalMillis`,
-  `setMinUpdateDistanceMeters`) más `setMaxUpdates(1)` para el fix único.
+  `setMinUpdateDistanceMeters`) más `setMaxUpdates(1)` para el fix único. La otra API retirada,
+  `setMaxUpdateAgeMillis`, tampoco está en el builder del framework (lo confirmó el compilador), así
+  que se quitó sin sustituto: la consulta inmediata pide un fix genuinamente fresco en lugar de
+  aceptar uno de hasta 30 s de antigüedad. Es un cambio de comportamiento pequeño, deliberado y en
+  la dirección prudente.
 - **`JSONArray.put(double)` declara `throws JSONException`** (`GithubPublisher`): ocho dobles de una
   fila compacta se metían sin capturarla —JSON no admite NaN ni infinito, de ahí la excepción
   declarada—. Ahora los dobles se sanean a un centinela antes de entrar y el `catch` queda como red
