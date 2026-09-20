@@ -19,11 +19,13 @@ import com.google.android.gms.tasks.OnSuccessListener;
 /**
  * Puente al proveedor fusionado de Google Play Services (Fused Location Provider).
  *
- * <p>¿Por qué además del motor del sistema? Porque <b>Android 11 y anteriores no tienen</b>
- * {@code LocationRequest} con {@code setWaitForAccurateLocation} en el framework (es API 31+): en esos
- * dispositivos el FLP de Google es la única forma de pedir un fix de alta precisión que espere a
- * tener una medida buena en lugar de devolver la primera mediocre. Es exactamente el rango
- * Android 11 que hay que soportar.</p>
+ * <p>¿Por qué además del motor del sistema? Por dos razones concretas. La primera: Android 11 y
+ * anteriores no tienen {@code android.location.LocationRequest} —llegó en API 31—, así que en ese
+ * rango solo se puede pedir un fix por proveedor con los métodos clásicos. La segunda: el flag
+ * {@code setWaitForAccurateLocation}, que hace esperar a una medida buena en vez de devolver la
+ * primera mediocre, existe <b>solo</b> en el cliente de Play Services; el builder del framework no
+ * lo tiene en ninguna versión. En los dispositivos con GMS, esta es la vía que pide precisión de
+ * verdad.</p>
  *
  * <p>Es opcional y se comprueba antes de usarlo: en Android Go Edition sin servicios de Google, en
  * ROMs sin GMS o si el usuario los tiene desactivados, {@link #isAvailable} devuelve {@code false} y

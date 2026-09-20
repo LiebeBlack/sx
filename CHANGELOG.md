@@ -51,6 +51,23 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y
 
 ### Corregido
 
+Y en el run #6, con los 14 arreglos anteriores ya dentro, los que quedaban —la lista de GitHub está
+capada a 10 anotaciones, así que además se auditó el patrón completo a mano:
+
+- **`setWaitForAccurateLocation` no existe en el builder del framework** (`LocationTrackerService`,
+  dos sitios): el flag es del cliente de Play Services, y el builder de `android.location` solo
+  acepta `(intervalo)` o `(petición)`, con la calidad en `setQuality`. Las dos peticiones usan ahora
+  métodos que el compilador ya había validado (`setQuality`, `setMinUpdateIntervalMillis`,
+  `setMinUpdateDistanceMeters`) más `setMaxUpdates(1)` para el fix único.
+- **`JSONArray.put(double)` declara `throws JSONException`** (`GithubPublisher`): ocho dobles de una
+  fila compacta se metían sin capturarla —JSON no admite NaN ni infinito, de ahí la excepción
+  declarada—. Ahora los dobles se sanean a un centinela antes de entrar y el `catch` queda como red
+  de seguridad, porque ese método se llama fuera del `try` de su llamador.
+- **Una frase que mentía** (`FusedLocationBridge`): decía que Android 11 y anteriores no tienen ese
+  flag «en el framework»; la verdad es que el framework no lo tiene en ninguna versión. Las dos
+  razones reales del puente a Play Services son: Android 11 no tiene `LocationRequest` (llegó en
+  API 31) y el flag de espera a una medida buena es exclusivo de GMS.
+
 - **El sitio de Pages respondía 404 en la raíz** (`index.html`, `docs/SETUP.md`): el repositorio
   tenía Pages publicando la carpeta **`/docs`**, que no tiene `index.html` —de ahí el «For root URLs
   you must provide an index.html»— y que además dejaba fuera el visualizador de `frontend/` y el

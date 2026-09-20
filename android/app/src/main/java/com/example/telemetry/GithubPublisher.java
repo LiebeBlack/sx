@@ -9,6 +9,7 @@ import android.util.Base64;
 import android.util.Log;
 
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedOutputStream;
@@ -266,20 +267,35 @@ public final class GithubPublisher {
      * dispositivo, las mismas que añade el backend a sus puntos: así el visualizador dibuja la traza
      * filtrada igual en modo «GitHub directo» que en modo «API en vivo», sin necesitar servidor.
      * Los lectores antiguos siguen leyendo solo las 8 primeras columnas.</p>
+     *
+     * <p>{@code JSONArray.put(double)} declara {@code throws JSONException} porque JSON no admite
+     * NaN ni infinito: por eso los dobles se sanean antes de entrar y el {@code catch} queda como
+     * red de seguridad. Un dato raro no puede tumbar la publicación entera.</p>
      */
     private JSONArray pointRow(JSONObject point) {
         JSONArray row = new JSONArray();
-        row.put(point.optLong("timestamp"));
-        row.put(point.optDouble("lat", 0.0));
-        row.put(point.optDouble("lng", 0.0));
-        row.put(point.optDouble("speed_mps", -1.0));
-        row.put(point.optDouble("bearing", -1.0));
-        row.put(point.optDouble("accuracy", -1.0));
-        row.put(point.optDouble("battery", -1.0));
-        row.put(point.optString("activity", ""));
-        row.put(point.optDouble("smooth_lat", -1.0));
-        row.put(point.optDouble("smooth_lng", -1.0));
+        try {
+            row.put(point.optLong("timestamp"));
+            row.put(finite(point, "lat", 0.0));
+            row.put(finite(point, "lng", 0.0));
+            row.put(finite(point, "speed_mps", -1.0));
+            row.put(finite(point, "bearing", -1.0));
+            row.put(finite(point, "accuracy", -1.0));
+            row.put(finite(point, "battery", -1.0));
+            row.put(point.optString("activity", ""));
+            row.put(finite(point, "smooth_lat", -1.0));
+            row.put(finite(point, "smooth_lng", -1.0));
+        } catch (JSONException e) {
+            // Inalcanzable con los valores ya saneados: si algún día deja de serlo, la fila sale
+            // incompleta pero la publicación continúa.
+        }
         return row;
+    }
+
+    /** NaN e infinito rompen {@code JSONArray.put(double)}; se sustituyen por el centinela dado. */
+    private static double finite(JSONObject source, String key, double fallback) {
+        double value = source.optDouble(key, fallback);
+        return Double.isFinite(value) ? value : fallback;
     }
 
     private JSONObject latestOf(JSONObject point) {

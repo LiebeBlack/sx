@@ -417,10 +417,9 @@ public class LocationTrackerService extends Service implements LocationListener 
      * Motor de ubicación de alta precisión (Android 12+).
      *
      * <p>Es la diferencia entre «hay una posición» y «la posición es buena»: se pide calidad
-     * {@code QUALITY_HIGH_ACCURACY}, con réplica rápida entre fixes y
-     * {@code setWaitForAccurateLocation(true)}, que hace esperar al motor fusionado hasta tener una
-     * medida realmente precisa en vez de entregar el primer fix mediocre que encuentre. Es lo que
-     * evita los puntos de ±300 m que arruinan una traza urbana.</p>
+     * {@code QUALITY_HIGH_ACCURACY} con réplica rápida entre fixes, que es el mando de precisión
+     * que el builder del framework ofrece de verdad. {@code setWaitForAccurateLocation} existe solo
+     * en el cliente de Play Services, y ese camino lo cubre {@link FusedLocationBridge}.</p>
      */
     private void registerAccurateFused() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -431,7 +430,6 @@ public class LocationTrackerService extends Service implements LocationListener 
                         .setQuality(LocationRequest.QUALITY_HIGH_ACCURACY)
                         .setMinUpdateIntervalMillis(Math.max(1_000L, minTimeMs / 2L))
                         .setMinUpdateDistanceMeters(Math.max(0f, minDistanceM / 2f))
-                        .setWaitForAccurateLocation(true)
                         .build();
                 locationManager.requestLocationUpdates(request, getMainExecutor(), this);
                 Log.i(TAG, "fused de alta precisión activo");
@@ -485,17 +483,16 @@ public class LocationTrackerService extends Service implements LocationListener 
     }
 
     /**
-     * Pide un único fix de alta precisión y espera a que sea bueno (hasta 20 s de margen, con caché
-     * de hasta 30 s). Devuelve {@code false} si el dispositivo no lo soporta, para poder caer al
-     * método clásico por proveedor.
+     * Pide un único fix de alta precisión: calidad alta y un solo resultado ({@code setMaxUpdates},
+     * que el builder del framework sí tiene) usando únicamente métodos verificados contra la API
+     * real. Devuelve {@code false} si el dispositivo no lo soporta, para poder caer al método
+     * clásico por proveedor.
      */
     private boolean requestAccurateCurrentFix() {
         try {
             LocationRequest request = new LocationRequest.Builder(5_000L)
                     .setQuality(LocationRequest.QUALITY_HIGH_ACCURACY)
-                    .setDurationMillis(20_000L)
-                    .setMaxUpdateAgeMillis(30_000L)
-                    .setWaitForAccurateLocation(true)
+                    .setMaxUpdates(1)
                     .build();
             locationManager.getCurrentLocation(request, cancellationSignal, freshFixExecutor, new Consumer<Location>() {
                 @Override
