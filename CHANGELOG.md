@@ -51,8 +51,9 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y
 
 ### Corregido
 
-Y en el run #6, con los 14 arreglos anteriores ya dentro, los que quedaban —la lista de GitHub está
-capada a 10 anotaciones, así que además se auditó el patrón completo a mano:
+Y en el run #6, con los 14 arreglos anteriores ya dentro, los que quedaban. La lista de anotaciones
+llegó **recortada** —mostró 10, y los dos errores que el run #8 reveló después ya existían en ese
+mismo código—, así que además se auditó el patrón completo a mano:
 
 - **`setWaitForAccurateLocation` no existe en el builder del framework** (`LocationTrackerService`,
   dos sitios): el flag es del cliente de Play Services, y el builder de `android.location` solo
@@ -74,6 +75,43 @@ capada a 10 anotaciones, así que además se auditó el patrón completo a mano:
   fichero `data/latest.json`. Ahora la raíz tiene su `index.html` y la documentación explica el
   fallo y la única configuración correcta (`main` + `/ (root)`; la carpeta `/frontend` que
   recomendaba antes no existe como opción en Pages).
+
+Y en el run #8, con los arreglos del #6 ya dentro, quedaban exactamente dos errores —esta vez la
+lista de anotaciones venía completa, con los dos fallos y solo dos—, y los dos eran el mismo fallo:
+
+- **Proveedor omitido en las sobrecargas de `LocationRequest`** (`LocationTrackerService`, dos
+  sitios): el framework **sí** acepta `LocationRequest` desde la API 31, pero con el nombre del
+  proveedor como primer argumento: `requestLocationUpdates(String, LocationRequest, Executor,
+  LocationListener)` y `getCurrentLocation(String, LocationRequest, CancellationSignal, Executor,
+  Consumer)` (firmas `@Register` de la API pública, `ApiSince=31`). El código las llamaba sin él,
+  así que javac elegía la sobrecarga `(String, LocationRequest, PendingIntent)` y fallaba con
+  «LocationRequest cannot be converted to String»: el error no estaba en el tipo de la petición
+  sino en su posición. El registro de alta precisión pasa ahora el proveedor que se está
+  registrando, y la consulta inmediata exige además que el proveedor fusionado exista —con la
+  comprobación de versión dentro del propio método, no solo en quien lo llama— para caer al camino
+  clásico por proveedor cuando no lo haya.
+
+Y en el run #11, con el proveedor ya en su sitio, el compilador entró por fin en la fase de flujo y
+apareció una familia de errores que hasta entonces era **invisible por diseño de javac**: cuando la
+atribución falla —una API inexistente, un tipo mal puesto— javac **no ejecuta la comprobación de
+excepciones**, así que los `unreported exception` de todo el proyecto estaban escondidos detrás de
+aquellos 14 errores de nombres. La lista volvía a llegar recortada a 10 anotaciones, así que los 34
+sitios del proyecto se localizaron con un analizador propio que replica esa fase, calibrado contra
+los 7 que el compilador sí mostró (7 de 7 de acuerdo, y sin colar ninguna llamada de `ContentValues`
+como si fuera JSON):
+
+- **`org.json.put` declara `throws JSONException`** y 34 llamadas no lo cubrían, en cuatro ficheros.
+  Los constructores privados de `ErrorLogger` (`mergeIncident`, `stackOf`, `causesOf`,
+  `appFingerprint`, `deviceFingerprint`) declaran ahora la excepción, exactamente como
+  `buildIncident` ya declaraba `throws Exception` y como sus llamadores ya envuelven el cuerpo en
+  `try/catch (Throwable)`; `GistPublisher.buildPayload` hace lo mismo, con `publishOnce` que ya
+  declaraba `IOException, JSONException` y ya los capturaba en sus tres llamadores; en
+  `GithubPublisher.mergeDevice` las filas compactas se construyen dentro del `try` que ya existía
+  para la fusión; y `TelemetryClient.persistLocked` la captura, porque ahí no hay a quién
+  propagarla sin cambiar el contrato: si un punto no serializa se pierde el espejo en disco, pero la
+  cola en memoria —que es la autoridad— sigue intacta. Se verificaron además los 19 métodos que
+  declaran excepciones `checked` en el proyecto: todos sus llamadores las capturan o las declaran,
+  sin un solo punto suelto.
 
 Y en el run #5, el primero que llegó a compilar de verdad: los **dos jobs de Python quedaron en
 verde** (3.10 y 3.12, con la suite completa y la guarda nueva del workflow incluidas) y el de Android

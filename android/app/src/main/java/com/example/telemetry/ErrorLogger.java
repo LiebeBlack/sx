@@ -15,6 +15,7 @@ import android.provider.MediaStore;
 import android.util.Log;
 
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 
@@ -267,7 +268,7 @@ public final class ErrorLogger {
      * <p>Devuelve un documento <b>nuevo</b> en lugar de mutar el anterior: el array de JSON de Android
      * no tiene inserción al principio, y reconstruirlo es más claro que mover elementos a mano.</p>
      */
-    private static JSONArray mergeIncident(JSONArray previous, JSONObject incident) {
+    private static JSONArray mergeIncident(JSONArray previous, JSONObject incident) throws JSONException {
         JSONArray document = new JSONArray();
         long now = incident.optLong("when_ms", System.currentTimeMillis());
         JSONObject newest = previous.optJSONObject(0);
@@ -666,7 +667,7 @@ public final class ErrorLogger {
         return incident;
     }
 
-    private static JSONArray stackOf(Throwable error) {
+    private static JSONArray stackOf(Throwable error) throws JSONException {
         JSONArray stack = new JSONArray();
         if (error == null) {
             return stack;
@@ -685,7 +686,7 @@ public final class ErrorLogger {
         return stack;
     }
 
-    private static JSONArray causesOf(Throwable error) {
+    private static JSONArray causesOf(Throwable error) throws JSONException {
         JSONArray causes = new JSONArray();
         Throwable cause = error == null ? null : error.getCause();
         int depth = 0;
@@ -704,7 +705,7 @@ public final class ErrorLogger {
         return causes;
     }
 
-    private static JSONObject appFingerprint(Context context) {
+    private static JSONObject appFingerprint(Context context) throws JSONException {
         JSONObject app = new JSONObject();
         try {
             PackageManager manager = context.getPackageManager();
@@ -721,7 +722,7 @@ public final class ErrorLogger {
         return app;
     }
 
-    private static JSONObject deviceFingerprint(Context context) {
+    private static JSONObject deviceFingerprint(Context context) throws JSONException {
         JSONObject device = new JSONObject();
         try {
             device.put("model", Build.MODEL);

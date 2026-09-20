@@ -213,14 +213,16 @@ public final class GithubPublisher {
         if (series == null) {
             series = new JSONArray();
         }
-        JSONArray trimmed = new JSONArray();
-        int from = Math.max(0, series.length() - (MAX_POINTS_IN_FILE - 1));
-        for (int i = from; i < series.length(); i++) {
-            trimmed.put(series.opt(i));
-        }
-        trimmed.put(pointRow(point));
-
         try {
+            // Las filas compactas se construyen dentro del try que ya existe: `put` declara
+            // JSONException y este es el mismo punto donde se captura el resto de la fusión.
+            JSONArray trimmed = new JSONArray();
+            int from = Math.max(0, series.length() - (MAX_POINTS_IN_FILE - 1));
+            for (int i = from; i < series.length(); i++) {
+                trimmed.put(series.opt(i));
+            }
+            trimmed.put(pointRow(point));
+
             JSONObject mergedEntry = new JSONObject();
             mergedEntry.put("device_id", deviceId);
             mergedEntry.put("label", prefs.getString(KEY_LABEL, deviceId));

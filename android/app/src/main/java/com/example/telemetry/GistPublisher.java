@@ -462,7 +462,7 @@ public final class GistPublisher {
      * extremo antiguo hacia atrás y respeta dos límites a la vez: número de puntos y caracteres
      * serializados (el límite de la API es 1 MB por fichero).
      */
-    static JSONArray buildPayload(JSONArray local, JSONArray remote) {
+    static JSONArray buildPayload(JSONArray local, JSONArray remote) throws JSONException {
         TreeMap<Long, JSONObject> byTimestamp = new TreeMap<>();
         addAll(byTimestamp, remote);
         addAll(byTimestamp, local);
