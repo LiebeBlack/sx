@@ -10,7 +10,7 @@ GitHub Pages**, en los dos modos posibles:
 | Qué escribe el fichero | Cada app Android (`GithubPublisher.java`) | El espejo del servidor (`github_mirror.py`) |
 | Ideal para | Demo táctica, sin infraestructura | Seguimiento real de varios dispositivos |
 
-Ambos modos terminan en el mismo sitio: un JSON en `data/latest.json` del repositorio, servido
+Ambos modos terminan en el mismo sitio: un JSON en `docs/data/latest.json` del repositorio, servido
 estáticamente por GitHub Pages y leído por el visualizador sin backend y sin CORS. Con backend,
 además, puedes ver la API en vivo con latencia de segundos.
 
@@ -28,7 +28,7 @@ crear el repositorio, crear un fine-grained token y activar Pages.
 
 **Decisión previa — repo público o privado:**
 
-> ⚠️ Lo que publiques en `data/latest.json` es **ubicación en tiempo casi real**. Si el repo es
+> ⚠️ Lo que publiques en `docs/data/latest.json` es **ubicación en tiempo casi real**. Si el repo es
 > público, esa ubicación es visible para cualquiera con el enlace. Para uso real usa un repo
 > **privado**: GitHub Pages funciona igual, pero requiere un plan de pago (GitHub Pro o superior)
 > para servirse desde repos privados. Para pruebas usa el modo privado de datos: publica con
@@ -55,7 +55,7 @@ git push -u origin main
 ## Paso 2 · Crear el fine-grained token (solo `Contents: read and write`)
 
 El token es la credencial con la que la app (o el espejo del backend) escribe
-`data/latest.json` en tu repo. Debe tener **el mínimo privilegio posible**:
+`docs/data/latest.json` en tu repo. Debe tener **el mínimo privilegio posible**:
 
 1. GitHub → clic en tu avatar → **Settings** → barra lateral, abajo: **Developer settings**.
 2. **Personal access tokens → Fine-grained tokens** → **Generate new token**.
@@ -86,7 +86,8 @@ acotado a ese repositorio y se revoca en segundos (Paso 8).
 2. En la sección **GitHub directo** de la pantalla principal:
    - **Token**: pega el `github_pat_…` del Paso 2.
    - **Repo**: `TU_USUARIO/telemetria` (usuario y repo separados por `/`, sin `https://`).
-   - **Rama**: `main`. **Ruta**: `data/latest.json` (por defecto; déjala salvo que sepas lo que haces).
+   - **Rama**: `main`. **Ruta**: `docs/data/latest.json` (por defecto; déjala salvo que sepas lo que
+     haces). Va dentro de `docs/` porque es la carpeta que publica Pages.
 3. **Guardar** y luego **Iniciar rastreo**. El estado de publicación aparece en el panel
    (`publicado · hace 45 s`) y como mucho se publica cada 60 s por dispositivo — la app fusiona
    por `device_id` con reintentos automáticos ante conflicto (sha obsoleto), así que varios
@@ -94,7 +95,7 @@ acotado a ese repositorio y se revoca en segundos (Paso 8).
 4. Sin backend, por Wi-Fi o por datos móviles, da igual: la app habla directamente con
    `api.github.com`.
 
-**Verifica** en github.com: el fichero `data/latest.json` debe existir en el repo con tus
+**Verifica** en github.com: el fichero `docs/data/latest.json` debe existir en el repo con tus
 coordenadas (se crea en la primera publicación, ~1 min tras iniciar el rastreo).
 
 ---
@@ -157,7 +158,7 @@ coordenadas (se crea en la primera publicación, ~1 min tras iniciar el rastreo)
 ## Paso 6 · Modo con backend (producción en tiempo real + espejo)
 
 Con el backend en marcha tienes **además** la API en vivo (1–10 s) y el **espejo**: el servidor
-consolida en el mismo `data/latest.json` todos los dispositivos — tanto los que le llegan por la
+consolida en el mismo `docs/data/latest.json` todos los dispositivos — tanto los que le llegan por la
 API como los que publican directo a GitHub — con rate limit, diff mínimo y tolerancia a conflictos.
 
 ### Opción A · Docker (recomendado)
@@ -169,7 +170,7 @@ TELEMETRY_API_KEY=una-clave-larga-que-inventes
 GITHUB_REPO=TU_USUARIO/telemetria
 GITHUB_TOKEN=github_pat_XXXXXXXXXXXXXXXXXXXX
 GITHUB_BRANCH=main
-GITHUB_PATH=data/latest.json
+GITHUB_PATH=docs/data/latest.json
 GITHUB_MIN_INTERVAL=60
 ```
 
@@ -193,7 +194,7 @@ Variables de entorno del espejo (ya declaradas en `docker-compose.yml`, con valo
 | `GITHUB_REPO` | *(vacío = espejo desactivado)* | `usuario/repo` destino de la publicación |
 | `GITHUB_TOKEN` | *(vacío)* | fine-grained token del Paso 2 (solo `Contents: read and write`) |
 | `GITHUB_BRANCH` | `main` | rama donde se escribe el fichero |
-| `GITHUB_PATH` | `data/latest.json` | ruta del fichero dentro del repo |
+| `GITHUB_PATH` | `docs/data/latest.json` | ruta del fichero dentro del repo (dentro de `docs/`, que es lo que publica Pages) |
 | `GITHUB_MIN_INTERVAL` | `60` | segundos mínimos entre publicaciones (rate limit propio; la API de GitHub permite 5000/h) |
 
 ### Opción B · Sin Docker
@@ -221,7 +222,7 @@ python app.py            # producción: gunicorn -w 1 -b 0.0.0.0:8000 app:app
 
 ## Paso 7 · Verificación end-to-end (checklist)
 
-- [ ] `data/latest.json` existe en el repo y cambia cada ~60 s (botón **History** del fichero).
+- [ ] `docs/data/latest.json` existe en el repo y cambia cada ~60 s (botón **History** del fichero).
 - [ ] La app muestra el estado de publicación actualizado (`publicado · hace N s`).
 - [ ] La web en Pages muestra los dispositivos con traza y panel; píldora `Pages · N disp.`.
 - [ ] (Con backend) `curl http://SERVIDOR/api/health` → `"github_mirror": {"enabled": true, …}` y
@@ -269,11 +270,12 @@ python app.py            # producción: gunicorn -w 1 -b 0.0.0.0:8000 app:app
    `gist`; si compartes token con el modo repositorio, basta `Contents` + `Gists`.
 3. En la app, sección **GitHub Gist**: pega el token en el campo de token de arriba, el **ID** (o la
    URL completa del gist, se normaliza sola) y deja `data.json`. **Guardar** e **Iniciar**.
-4. Publica `frontend/gist.html` donde quieras (o ábrelo en local): sondea cada 3 s la URL cruda del
+4. Publica `docs/gist.html` donde quieras (o ábrelo en local): sondea cada 3 s la URL cruda del
    gist y dibuja el histórico, con la tabla de puntos y el diagnóstico del enlace. La URL se puede
    cambiar en el propio visor y queda guardada. El **visor principal** lee el mismo Gist: elige la
    fuente «Gist (histórico)» y pega el ID, o entra directamente con
-   `…/frontend/?feed=gist&gist=<id>` — así el mapa, el radar y las dos trazas funcionan también sin
+   `…/mapa.html?feed=gist&gist=<id>` (o `…/docs/mapa.html?…` si publicas la raíz) — así el mapa, el
+   radar y las dos trazas funcionan también sin
    backend ni repositorio.
 5. Comprueba en el panel de la app que aparece `Gist: ok · N/500 puntos …` y `WorkManager (gist)`.
    Si sale `pendientes`, hay red de por medio: el ciclo siguiente manda todo lo acumulado.
@@ -306,7 +308,7 @@ error registrado. Si la carpeta pública no está disponible, ambos ficheros que
 
 ```
 móvil(s) Android ──POST /api/location──▶ backend (Flask, Kalman + integridad) ─┐
-      │                                     │                                   ├── data/latest.json
+      │                                     │                       ├── docs/data/latest.json
       ├── Contents API (Wi-Fi o datos) ─────┴── espejo github_mirror.py ────────┘         │
       │                                                                    GitHub Pages ◀─┘
       └── Gists API (GET + PATCH) ──▶ gist (histórico) ──raw_url──▶ gist.html (3 s)
@@ -314,5 +316,5 @@ móvil(s) Android ──POST /api/location──▶ backend (Flask, Kalman + int
 
 Referencias cruzadas: `docs/API.md` (endpoints del backend), `docs/CONFIGURACION.md` (rellenar la
 configuración del móvil y cargarla de una vez con un JSON), `README.md` §«Tres modos de
-producción» y §2–3 (frontend y app), `backend/github_mirror.py` (espejo),
+producción» y §2–3 (visor y app), `backend/github_mirror.py` (espejo),
 `android/.../GithubPublisher.java` (publicación directa).

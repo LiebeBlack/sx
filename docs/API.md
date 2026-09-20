@@ -11,7 +11,7 @@ las lecturas siempre son abiertas.
 | `GET` | `/api/locations/<device_id>` | no | historial de un dispositivo |
 | `DELETE` | `/api/locations/<device_id>` | sí | borra el dispositivo y sus puntos |
 | `GET` | `/api/health` | no | estado del servidor |
-| `GET` | `/` | no | visualizador estático (si existe `frontend/`) |
+| `GET` | `/` | no | visualizador estático (si existe `docs/`; sirve `mapa.html`) |
 
 Parámetros de lectura: `format=compact` (puntos como arrays), `limit=N` (últimos N),
 `since=<ms>` (desde un instante), `latest=1` (solo última posición y resumen, sin historial),

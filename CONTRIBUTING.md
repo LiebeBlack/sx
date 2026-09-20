@@ -67,6 +67,6 @@ el mismo PR (el simulador es la referencia ejecutable de ese esquema).
 
 Si cambias **el contrato del canal Gist**, actualiza en el mismo PR las cuatro piezas que lo
 comparten: `GistPublisher.java` (el que publica), `tools/gist_schema.py` (la referencia ejecutable),
-`tests/test_gist_schema.py` (las reglas de fusión y recorte) y `frontend/gist.html` (el visor). Las
+`tests/test_gist_schema.py` (las reglas de fusión y recorte) y `docs/gist.html` (el visor). Las
 reglas que en el móvil no se pueden ejecutar desde CI se prueban ahí precisamente para que un cambio
 de contrato falle antes de llegar a un dispositivo.

@@ -40,7 +40,7 @@ En los tres casos el visualizador es el mismo: elige la fuente en el desplegable
 descarga en **CSV** o en **GPX** (para mapas, relojes y análisis), el panel **distancia por día**
 resume la última semana —lo de hoy primero, con `hoy` también en la barra del pie y en la tarjeta de
 cada dispositivo—, el botón **Días** se lleva esa tabla completa en CSV y una vista concreta se
-comparte por URL —`…/frontend/?feed=gist&gist=<id>`, `?view=radar`, `?interval=5000`, `?follow=<id>`—. Los tokens
+comparte por URL —`…/mapa.html?feed=gist&gist=<id>`, `?view=radar`, `?interval=5000`, `?follow=<id>`—. Los tokens
 **no** se aceptan por URL a propósito: una credencial en un enlace compartido o en el historial del
 navegador es una credencial filtrada.
 
@@ -61,13 +61,16 @@ vivo. El token que necesitas para este modo solo requiere el permiso `Gists: rea
 1. Crea un **fine-grained token** con permiso `Contents: read and write` solo en el repo de destino
    (Settings → Developer settings → Fine-grained tokens).
 2. En la app, rellena la sección **GitHub directo**: token, `usuario/repositorio`, rama y ruta
-   (`data/latest.json` por defecto). Guarda e inicia el rastreo.
+   (`docs/data/latest.json` por defecto, dentro de la carpeta que publica Pages). Guarda e inicia el
+   rastreo.
 3. La app escribe el fichero vía Contents API: fusión por `device_id`, reintento automático ante
    409 (sha obsoleto) y publicación como mucho cada 60 s. Activa **Settings → Pages → Deploy from
-   branch** en el repo: rama `main` y carpeta **`/ (root)`** — es la única que publica el
-   visualizador y `data/latest.json`; con `/docs` se publica solo la documentación (su portada ya
-   existe en `docs/index.html` y los documentos se leen en `docs/doc.html`, que pinta el Markdown
-   servido por Pages) y el mapa se ve desde el backend (ver `docs/SETUP.md`, Paso 4).
+   branch** en el repo: rama `main` y carpeta **`/docs`** — el visor vive ahí, así que se publica
+   junto a la documentación: la portada queda en `…/`, el **mapa en `…/mapa.html`**, los documentos
+   en `…/doc.html` (que pinta el Markdown servido por Pages) y el fichero de datos en
+   `…/data/latest.json`. Con `/ (root)` también funciona todo, una carpeta más adentro
+   (`…/docs/mapa.html` y `…/docs/data/latest.json`); el visor prueba las dos ubicaciones del fichero
+   (ver `docs/SETUP.md`, Paso 4).
 4. En el visualizador, elige la fuente **GitHub Pages (fichero)**. Desde la propia web de Pages la
    ruta por defecto ya es correcta; para otro repo escribe `https://usuario.github.io/repo` en el
    campo API.
@@ -83,8 +86,8 @@ limit y diff mínimo (estado visible en `/api/health → github_mirror`).
 backend/app.py                          API JSON: Kalman, altitud fusionada, integridad de datos
 backend/github_mirror.py                Espejo del estado a GitHub (Contents API)
 android/.../GithubPublisher.java        Publicación directa del móvil a GitHub (Wi-Fi o datos)
-frontend/index.html                     Visualizador Vanilla JS + Leaflet (OLED, 3 fuentes, 2 trazas, radar sin CDN, CSV/GPX, distancia por día, URL compartible)
-frontend/gist.html                      Visor del canal Gist (autónomo, sin librerías, histórico, distancia y día, diagnóstico del enlace; enlazado desde el visor principal)
+docs/mapa.html                          Visualizador Vanilla JS + Leaflet (OLED, 3 fuentes, 2 trazas, radar sin CDN, CSV/GPX, distancia por día, URL compartible)
+docs/gist.html                          Visor del canal Gist (autónomo, sin librerías, histórico, distancia y día, diagnóstico del enlace; enlazado desde el visor principal)
 index.html                              Portada del sitio de Pages: redirige al visualizador en vivo
 tools/simulate.py                       Generador de trafico sintetico (--noisy)
 tools/check_frontend.py                 Valida el JS embebido de los dos visores con node --check
@@ -169,11 +172,11 @@ Usa **1 worker**: el estado vive en memoria; con varios procesos cada worker ten
 
 El servidor valida rangos, normaliza el timestamp (s → ms), descarta duplicados y puntos fuera de
 orden, y calcula distancia recorrida, velocidad media/máxima y rumbo. También sirve
-`frontend/index.html` en `/` si existe la carpeta.
+`docs/mapa.html` en `/` si existe la carpeta.
 
 ## 2. Frontend en GitHub Pages
 
-Publica la carpeta `frontend/` y escribe la URL pública del backend en el campo **API**
+Publica la carpeta `docs/` y escribe la URL pública del backend en el campo **API**
 (se guarda en `localStorage`). Alternativa antes de cargar el script:
 
 ```html
@@ -394,7 +397,7 @@ python backend/app.py &
 python tools/simulate.py --url http://127.0.0.1:8000/api/location --devices 3 --interval 2
 python tools/simulate.py --devices 1 --interval 2 --noisy      # saltos y fixes malos a propósito
 python tools/simulate.py --devices 1 --interval 3 --teleport   # 150-250 m por vuelta: prueba la regla de salto
-# abre http://127.0.0.1:8000/  (sirve el frontend)
+# abre http://127.0.0.1:8000/  (sirve el visor)
 ```
 
 El simulador emite el mismo esquema que el cliente Android (GNSS, sensores, Wi-Fi, celdas,
@@ -452,7 +455,7 @@ mismo que usan las filas compactas). `status.fallback_active` se activa cuando e
 motor principal (GPS o fusionado), y `status.last_error` lleva el diagnóstico del propio canal: el
 payload se explica a sí mismo.
 
-**El visor `frontend/gist.html`** es autónomo: un solo fichero, sin librerías externas, fondo negro
+**El visor `docs/gist.html`** es autónomo: un solo fichero, sin librerías externas, fondo negro
 puro y solo dos colores (cian `#00FFFF` y púrpura `#800080`). Sondea cada 3 s con cache-busting
 (`?t=`), y si GitHub entrega el fichero a medio escribir el `JSON.parse` falla dentro de un
 `try/catch`, **se conserva en pantalla el último estado válido** y se reintenta en el ciclo siguiente
@@ -621,8 +624,9 @@ git push -u origin main
 ```
 
 Después: sustituye `OWNER/REPO` en los badges y en `.github/ISSUE_TEMPLATE/config.yml`, y si vas a
-usar GitHub Pages publica la carpeta `frontend/` (Settings → Pages → rama y carpeta `/frontend`),
-que solo contiene HTML, un `<script>` y Leaflet por CDN.
+usar GitHub Pages publica la carpeta `docs/` (Settings → Pages → rama `main` y carpeta `/docs`), que
+contiene el visor, el lector de documentos y la guía; el visor es solo HTML, un `<script>` y Leaflet
+por CDN.
 
 ## 10. Seguridad, privacidad y límites
 
