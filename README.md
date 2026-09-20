@@ -1,6 +1,6 @@
 # Telemetría y geolocalización punto a punto
 
-[![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+[![CI](https://github.com/LiebeBlack/sx/actions/workflows/ci.yml/badge.svg)](https://github.com/LiebeBlack/sx/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![Android](https://img.shields.io/badge/Android-API%2030--35-3DDC84?logo=android&logoColor=white)
 ![Sin dependencias JS](https://img.shields.io/badge/frontend-Vanilla%20JS-f7df1e)

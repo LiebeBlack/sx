@@ -117,6 +117,27 @@ como si fuera JSON):
   declaran excepciones `checked` en el proyecto: todos sus llamadores las capturan o las declaran,
   sin un solo punto suelto.
 
+Y en el run #13, el primero con el compilador conforme: **todo en verde, por primera vez**. El job
+de Android bajó de 14 errores a 12, a 2, a 1 y a 0, y esta vez no solo compila: el **release se
+construye con las reglas ProGuard extremas**, la comprobación de que el manifest sobrevive a R8
+pasa, y el **APK se sube como artefacto** (los dos jobs de Python, verdes desde el #5, siguen en
+verde con la guarda del workflow y la comprobación de JavaScript incluidas). Lo único que quedaba
+después del #11 era mío, y dejó una regla que conviene no olvidar:
+
+- **Un `catch (JSONException)` alrededor de un `try` que no puede lanzarla** (`TelemetryClient`): el
+  lenguaje prohíbe capturar una excepción que el cuerpo no declara, y el compilador lo dijo con
+  precisión: «exception JSONException is never thrown in body of corresponding try statement». La
+  causa es una asimetría real de `org.json`: **todos los `JSONObject.put(...)` y las sobrecargas
+  numéricas de `JSONArray` declaran `JSONException`, pero `JSONArray.put(Object)` no** — y
+  `array.put(it.next())` cae justo en ese último caso.
+- **Cuatro correcciones de más, retiradas con el mismo criterio**: el barrido previo sobrecorrigió
+  porque no distinguía la sobrecarga de objeto, así que sobraba el `throws JSONException` de
+  `ErrorLogger.stackOf` y `causesOf` y el de `GistPublisher.buildPayload`, y sobraba mover las filas
+  compactas de `GithubPublisher.mergeDevice` dentro del `try`. El compilador fue el árbitro: los
+  cuatro volvieron a su forma anterior y se quedaron los tres que sí hacían falta (`mergeIncident`,
+  `appFingerprint`, `deviceFingerprint`). Los comentarios que explican la asimetría de `org.json` se
+  conservan donde importan.
+
 Y en el run #5, el primero que llegó a compilar de verdad: los **dos jobs de Python quedaron en
 verde** (3.10 y 3.12, con la suite completa y la guarda nueva del workflow incluidas) y el de Android
 pasó de morir en la configuración del SDK a **fallar en el compilador**, que es exactamente donde
