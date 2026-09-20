@@ -102,9 +102,29 @@ class IngestTest(unittest.TestCase):
         far = telemetry._ingest(sample(lat=BASE_LAT + 0.05, ts=BASE_TS + 1000, accuracy=5.0))
         self.assertTrue(far["outlier"])
         self.assertTrue(far["low_quality"])
+        self.assertEqual(far["outlier_reason"], "speed")
         self.assertEqual(far["distance_m"], 0.0)
         self.assertGreater(far["raw_distance_m"], 5000.0)
         self.assertEqual(telemetry._meta["dev-test"]["outliers"], 1)
+
+    def test_teleport_de_mas_de_150m_se_descarta_por_salto(self):
+        """0.0018° ≈ 200 m en 3 s = 67 m/s: no llega al umbral de velocidad (90 m/s), pero es
+        un salto de más de 150 m a velocidad implausible y debe descartarse como 'jump'."""
+        telemetry._ingest(sample(accuracy=5.0))
+        jump = telemetry._ingest(sample(lat=BASE_LAT + 0.0018, ts=BASE_TS + 3000, accuracy=5.0))
+        self.assertTrue(jump["outlier"])
+        self.assertEqual(jump["outlier_reason"], "jump")
+        self.assertEqual(jump["distance_m"], 0.0)
+        self.assertAlmostEqual(jump["raw_distance_m"], 200.4, delta=2.0)
+        self.assertEqual(telemetry._meta["dev-test"]["outliers"], 1)
+
+    def test_trayecto_legitimo_de_mas_de_150m_no_es_salto(self):
+        """0.0027° ≈ 300 m en 12 s = 90 km/h: supera los 150 m de distancia, pero es
+        conducción real, así que la regla de salto no debe descartarlo."""
+        telemetry._ingest(sample(accuracy=5.0))
+        moved = telemetry._ingest(sample(lat=BASE_LAT + 0.0027, ts=BASE_TS + 12_000, accuracy=5.0))
+        self.assertFalse(moved.get("outlier", False))
+        self.assertGreater(moved["distance_m"], 250.0)
 
     def test_hueco_largo_reinicia_el_filtro_sin_sumar_tramo(self):
         telemetry._ingest(sample(accuracy=5.0))
@@ -138,6 +158,14 @@ class IngestTest(unittest.TestCase):
         self.assertLess(spread([p["smooth_lat"] for p in series]), spread([p["lat"] for p in series]) * 0.85)
         self.assertLess(meta["distance_m"], meta["raw_distance_m"] * 0.9)
         self.assertGreater(meta["noise_removed_m"], 0.0)
+
+    def test_marca_y_conserva_la_posicion_filtrada_de_cada_punto(self):
+        telemetry._ingest(sample(accuracy=5.0))
+        moved = telemetry._ingest(sample(lat=BASE_LAT + 0.0005, ts=BASE_TS + 5000, accuracy=5.0))
+        self.assertIn("smooth_lat", moved)
+        self.assertIn("smooth_lng", moved)
+        self.assertGreater(moved["smooth_lat"], BASE_LAT)
+        self.assertLess(moved["smooth_lat"], moved["lat"])
 
     def test_no_inventa_movimiento_en_parado(self):
         for step in range(20):

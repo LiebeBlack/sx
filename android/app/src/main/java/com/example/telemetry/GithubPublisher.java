@@ -27,8 +27,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Publica la telemetría directamente en un repositorio de GitHub (Contents API), sin servidor
- * propio: el móvil puede estar en Wi-Fi o en datos móviles. El resultado es un GeoJSON
- * {@code data/latest.json} que GitHub Pages sirve como fichero estático.
+ * propio: el móvil puede estar en Wi-Fi o en datos móviles. El resultado es un fichero compacto
+ * {@code data/latest.json} que GitHub Pages sirve como estático y que el visualizador lee sin
+ * backend. Cada fila de puntos lleva, además de la medida bruta, la posición ya filtrada.
  *
  * <p>Concurrency: GitHub rechaza PUT con un {@code sha} obsoleto (409). Ante 409 se vuelve a
  * leer el fichero, se fusiona con lo publicado por otros dispositivos y se reintenta: nunca se
@@ -258,7 +259,14 @@ public final class GithubPublisher {
         }
     }
 
-    /** Fila compacta [ts, lat, lng, speed, bearing, acc, battery, activity]. */
+    /**
+     * Fila compacta [ts, lat, lng, speed, bearing, acc, battery, activity, smooth_lat, smooth_lng].
+     *
+     * <p>Las dos últimas columnas son la posición filtrada por {@link TrackFilter} en el propio
+     * dispositivo, las mismas que añade el backend a sus puntos: así el visualizador dibuja la traza
+     * filtrada igual en modo «GitHub directo» que en modo «API en vivo», sin necesitar servidor.
+     * Los lectores antiguos siguen leyendo solo las 8 primeras columnas.</p>
+     */
     private JSONArray pointRow(JSONObject point) {
         JSONArray row = new JSONArray();
         row.put(point.optLong("timestamp"));
@@ -269,6 +277,8 @@ public final class GithubPublisher {
         row.put(point.optDouble("accuracy", -1.0));
         row.put(point.optDouble("battery", -1.0));
         row.put(point.optString("activity", ""));
+        row.put(point.optDouble("smooth_lat", -1.0));
+        row.put(point.optDouble("smooth_lng", -1.0));
         return row;
     }
 
@@ -284,6 +294,12 @@ public final class GithubPublisher {
             latest.put("ts", point.optLong("timestamp"));
             latest.put("activity", point.optString("activity", ""));
             latest.put("provider", point.optString("provider", ""));
+            // Medidas de interiores: sin ellas, el modo «GitHub directo» perdería información que
+            // sí muestra el modo API (la distancia real al punto de acceso por 802.11mc).
+            JSONArray rtt = point.optJSONArray("rtt");
+            if (rtt != null && rtt.length() > 0) {
+                latest.put("rtt", rtt);
+            }
         } catch (Exception ignored) {
             // nunca debe romper la publicación
         }

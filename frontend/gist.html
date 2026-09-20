@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Telemetría · Gist (OLED)</title>
+<style>
+  :root {
+    --cyan: #00FFFF;
+    --purple: #800080;
+    --cyan-dim: rgba(0, 255, 255, 0.55);
+    --cyan-faint: rgba(0, 255, 255, 0.16);
+    --purple-dim: rgba(128, 0, 128, 0.65);
+    --bg: #000000;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--cyan);
+    font: 13px/1.45 ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+    -webkit-font-smoothing: antialiased;
+  }
+  body { padding: 14px 14px 40px; }
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 10px 18px;
+    border-bottom: 1px solid var(--purple);
+    padding-bottom: 10px;
+    margin-bottom: 14px;
+  }
+  h1 {
+    font-size: 15px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin: 0;
+    color: var(--cyan);
+  }
+  .tag {
+    border: 1px solid var(--purple);
+    border-radius: 3px;
+    padding: 1px 7px;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--cyan-dim);
+  }
+  .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); display: inline-block; }
+  .pulse.off { background: var(--purple); }
+  .pulse.err { background: var(--purple); box-shadow: 0 0 6px var(--purple); }
+  main { display: grid; gap: 14px; }
+  section.card {
+    border: 1px solid var(--purple);
+    border-radius: 6px;
+    padding: 12px 14px;
+    background: var(--bg);
+  }
+  .grid2 { display: grid; gap: 14px; grid-template-columns: 1fr; }
+  @media (min-width: 900px) { .grid2 { grid-template-columns: 1.1fr 1fr; } }
+  h2 {
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--cyan);
+    margin: 0 0 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--cyan-faint);
+  }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; }
+  dt { color: var(--purple); text-transform: uppercase; font-size: 10px; letter-spacing: 0.12em; align-self: center; }
+  dd { margin: 0; color: var(--cyan); word-break: break-word; }
+  .big { font-size: 20px; letter-spacing: 0.04em; }
+  .warn { color: var(--purple); }
+  .mono-dim { color: var(--cyan-dim); }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  input[type="text"] {
+    flex: 1 1 340px;
+    min-width: 220px;
+    background: var(--bg);
+    color: var(--cyan);
+    border: 1px solid var(--purple);
+    border-radius: 4px;
+    padding: 7px 9px;
+    font: inherit;
+  }
+  input[type="text"]:focus { outline: 1px solid var(--cyan-dim); }
+  button {
+    background: var(--bg);
+    color: var(--cyan);
+    border: 1px solid var(--cyan);
+    border-radius: 4px;
+    padding: 7px 11px;
+    font: inherit;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  button:hover { background: var(--cyan-faint); }
+  button.alt { border-color: var(--purple); color: var(--cyan-dim); }
+  canvas { width: 100%; height: auto; display: block; border: 1px solid var(--purple); border-radius: 4px; }
+  .tableWrap { max-height: 320px; overflow: auto; border: 1px solid var(--purple); border-radius: 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--cyan-faint); white-space: nowrap; }
+  th {
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    color: var(--purple);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--purple);
+  }
+  td { color: var(--cyan); }
+  tbody tr:hover td { background: var(--cyan-faint); }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; margin-top: 8px; color: var(--cyan-dim); }
+  .legend i { display: inline-block; width: 16px; height: 2px; vertical-align: middle; margin-right: 6px; background: var(--cyan); }
+  .legend i.raw { background: var(--purple); }
+  footer { margin-top: 16px; font-size: 10px; letter-spacing: 0.1em; color: var(--purple); text-transform: uppercase; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Telemetría · Gist</h1>
+  <span class="tag"><span id="pulse" class="pulse off"></span> <span id="linkState">esperando</span></span>
+  <span class="tag" id="pointsTag">0 puntos</span>
+  <span class="tag" id="ageTag">sin datos</span>
+</header>
+
+<main>
+  <div class="grid2">
+    <section class="card">
+      <h2>Última posición</h2>
+      <dl>
+        <dt>lat / lng</dt>
+        <dd class="big" id="latlng">—</dd>
+        <dt>hora</dt>
+        <dd id="when">—</dd>
+        <dt>altitud</dt>
+        <dd id="altitude">—</dd>
+        <dt>precisión</dt>
+        <dd id="accuracy">—</dd>
+        <dt>velocidad</dt>
+        <dd id="speed">—</dd>
+        <dt>rumbo</dt>
+        <dd id="bearing">—</dd>
+        <dt>origen</dt>
+        <dd id="provider">—</dd>
+        <dt>satélites</dt>
+        <dd id="satellites">—</dd>
+        <dt>batería</dt>
+        <dd id="battery">—</dd>
+        <dt>red</dt>
+        <dd id="network">—</dd>
+        <dt>actividad</dt>
+        <dd id="activity">—</dd>
+        <dt>estado</dt>
+        <dd id="status">—</dd>
+      </dl>
+    </section>
+
+    <section class="card">
+      <h2>Diagnóstico del enlace</h2>
+      <dl>
+        <dt>última lectura</dt>
+        <dd id="diagOk">nunca</dd>
+        <dt>HTTP</dt>
+        <dd id="diagHttp">—</dd>
+        <dt>errores seguidos</dt>
+        <dd id="diagErrors">0</dd>
+        <dt>último error</dt>
+        <dd id="diagLastError">—</dd>
+        <dt>elementos del último lote</dt>
+        <dd id="diagBatch">0</dd>
+        <dt>elementos recibidos (total)</dt>
+        <dd id="diagTotal">0</dd>
+        <dt>ya conocidos (dedupe)</dt>
+        <dd id="diagDupes">0</dd>
+        <dt>fuente</dt>
+        <dd id="diagUrl">—</dd>
+      </dl>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Trazas</h2>
+    <div class="controls">
+      <input type="text" id="urlInput" spellcheck="false" aria-label="URL raw del gist" />
+      <button id="applyBtn">Aplicar</button>
+      <button id="reloadBtn" class="alt">Forzar lectura</button>
+      <button id="downloadBtn" class="alt">Descargar JSON</button>
+      <button id="clearBtn" class="alt">Limpiar vista</button>
+    </div>
+    <canvas id="track" width="1200" height="520"></canvas>
+    <div class="legend">
+      <span><i></i>filtrada (smooth)</span>
+      <span><i class="raw"></i>bruta</span>
+      <span id="trackInfo">—</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Historial <span class="mono-dim" id="historyCount">(0)</span></h2>
+    <div class="tableWrap">
+      <table>
+        <thead>
+          <tr>
+            <th>instante</th>
+            <th>lat</th>
+            <th>lng</th>
+            <th>±m</th>
+            <th>km/h</th>
+            <th>origen</th>
+            <th>bat</th>
+            <th>red</th>
+            <th>actividad</th>
+          </tr>
+        </thead>
+        <tbody id="historyBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer id="footer">sondeo cada 3 s · cache-busting estricto · deduplicación por timestamp_ms</footer>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var DEFAULT_URL = "https://gist.githubusercontent.com/LiebeBlack/e3541f64e432227a5a53f571c3bbc793/raw/data.json";
+  var POLL_MS = 3000;
+  var MAX_VIEW = 8000;
+  var MAX_ROWS = 400;
+  var STORAGE_KEY = "telemetria.gist.url";
+
+  var state = {
+    url: DEFAULT_URL,
+    points: new Map(),      // clave: timestamp_ms → punto normalizado (dedupe exacto)
+    rows: new Map(),        // clave: timestamp_ms → <tr> ya pintada (sin parpadeos)
+    lastOkAt: 0,
+    lastAttemptAt: 0,
+    consecutiveErrors: 0,
+    httpStatus: 0,
+    lastError: "",
+    received: 0,
+    duplicates: 0,
+    lastBatch: 0,
+    inFlight: false,   // un solo sondeo a la vez: el botón, la pestaña y el temporizador coinciden
+    changed: [],
+    fingerprints: new Map(),   // ts → huella de lo pintado (para detectar puntos corregidos)
+    timer: null
+  };
+
+  function $(id) { return document.getElementById(id); }
+
+  function loadUrl() {
+    try {
+      var saved = window.localStorage.getItem(STORAGE_KEY);
+      if (saved && saved.indexOf("http") === 0) {
+        state.url = saved;
+      }
+    } catch (e) {
+      // almacenamiento no disponible (modo privado): se usa la URL por defecto
+    }
+    $("urlInput").value = state.url;
+  }
+
+  function saveUrl(url) {
+    try { window.localStorage.setItem(STORAGE_KEY, url); } catch (e) { /* sin persistencia */ }
+  }
+
+  /** Cache-busting: GitHub sirve el raw con caché agresiva, así que cada lectura es única. */
+  function withCacheBuster(url) {
+    return url + (url.indexOf("?") >= 0 ? "&" : "?") + "t=" + Date.now();
+  }
+
+  function isFiniteNumber(value) {
+    return typeof value === "number" && isFinite(value);
+  }
+
+  /**
+   * Normaliza un elemento del array. Acepta el esquema del Gist (location/telemetry/status) y también
+   * el plano (lat/lng/timestamp) por si el fichero lo escribió una versión anterior.
+   */
+  function normalize(item) {
+    if (!item || typeof item !== "object") { return null; }
+    var location = item.location && typeof item.location === "object" ? item.location : item;
+    var telemetry = item.telemetry && typeof item.telemetry === "object" ? item.telemetry : item;
+    var status = item.status && typeof item.status === "object" ? item.status : {};
+
+    var lat = isFiniteNumber(location.latitude) ? location.latitude : (isFiniteNumber(location.lat) ? location.lat : NaN);
+    var lng = isFiniteNumber(location.longitude) ? location.longitude : (isFiniteNumber(location.lng) ? location.lng : NaN);
+    if (!isFinite(lat) || !isFinite(lng)) { return null; }
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) { return null; }
+
+    var ts = isFiniteNumber(telemetry.timestamp_ms) ? telemetry.timestamp_ms : NaN;
+    if (!isFinite(ts)) { ts = isFiniteNumber(telemetry.timestamp) ? telemetry.timestamp : NaN; }
+    if (!isFinite(ts)) { ts = Date.now(); }
+
+    return {
+      ts: Math.round(ts),
+      lat: lat,
+      lng: lng,
+      altitude: isFiniteNumber(location.altitude) ? location.altitude : null,
+      altitudeSource: location.altitude_source || "",
+      accuracy: isFiniteNumber(location.accuracy_meters) ? location.accuracy_meters : null,
+      speedKmh: isFiniteNumber(location.speed_kmh) ? location.speed_kmh : null,
+      speedMps: isFiniteNumber(location.speed_mps) ? location.speed_mps : null,
+      bearing: isFiniteNumber(location.bearing_degrees) && location.bearing_degrees >= 0 ? location.bearing_degrees : null,
+      provider: location.provider || "unknown",
+      mock: location.mock === true,
+      smoothLat: isFiniteNumber(location.smooth_latitude) ? location.smooth_latitude : null,
+      smoothLng: isFiniteNumber(location.smooth_longitude) ? location.smooth_longitude : null,
+      satellites: isFiniteNumber(location.satellites_used) ? location.satellites_used : null,
+      constellations: location.constellations || "",
+      battery: isFiniteNumber(telemetry.battery_level) ? telemetry.battery_level : null,
+      charging: telemetry.is_charging === true,
+      network: telemetry.network_label || telemetry.network_type || "",
+      activity: telemetry.activity || "",
+      deviceId: telemetry.device_id || "",
+      isTracking: status.is_tracking === true,
+      fallback: status.fallback_active === true,
+      lastError: status.last_error ? String(status.last_error) : ""
+    };
+  }
+
+  /** Lectura estricta y tolerante: un fichero corrupto devuelve null y NO se toca el historial. */
+  function parsePayload(text) {
+    if (typeof text !== "string") { return null; }
+    var trimmed = text.trim();
+    if (trimmed.length === 0) { return null; }
+    var data;
+    try {
+      data = JSON.parse(trimmed);
+    } catch (e) {
+      return null;   // lectura sucia mientras GitHub propagaba: se reintenta en el siguiente ciclo
+    }
+    var list;
+    if (Array.isArray(data)) {
+      list = data;
+    } else if (data && typeof data === "object") {
+      list = [data];
+    } else {
+      return null;
+    }
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      var point = normalize(list[i]);
+      if (point) { out.push(point); }
+    }
+    return out;
+  }
+
+  /** Huella de los campos que se ven en la tabla: solo si cambia se repinta una fila. */
+  function fingerprintOf(point) {
+    return [point.lat, point.lng, point.accuracy, point.speedKmh, point.provider,
+            point.battery, point.network, point.activity, point.smoothLat, point.smoothLng].join("|");
+  }
+
+  function merge(incoming) {
+    var added = 0;
+    var changed = [];
+    for (var i = 0; i < incoming.length; i++) {
+      var point = incoming[i];
+      state.received++;
+      var previousFingerprint = state.fingerprints.get(point.ts);
+      var fingerprint = fingerprintOf(point);
+      if (previousFingerprint === undefined) {
+        added++;
+      } else {
+        state.duplicates++;
+        if (previousFingerprint !== fingerprint) {
+          changed.push(point);   // el mismo instante llegó con datos distintos: se refresca la fila
+        }
+      }
+      state.fingerprints.set(point.ts, fingerprint);
+      state.points.set(point.ts, point);   // si llega corregido, gana la versión nueva
+    }
+    state.changed = changed;
+    prune();
+    return added;
+  }
+
+  function prune() {
+    if (state.points.size <= MAX_VIEW) { return; }
+    var keys = Array.from(state.points.keys()).sort(function (a, b) { return a - b; });
+    var excess = state.points.size - MAX_VIEW;
+    for (var i = 0; i < excess; i++) {
+      state.points.delete(keys[i]);
+      state.fingerprints.delete(keys[i]);
+      var row = state.rows.get(keys[i]);
+      if (row && row.parentNode) { row.parentNode.removeChild(row); }
+      state.rows.delete(keys[i]);
+    }
+  }
+
+  function sortedPoints() {
+    var list = Array.from(state.points.values());
+    list.sort(function (a, b) { return a.ts - b.ts; });
+    return list;
+  }
+
+  function fmt(value, digits, suffix) {
+    if (value === null || value === undefined || !isFinite(value)) { return "—"; }
+    return Number(value).toFixed(digits === undefined ? 1 : digits) + (suffix || "");
+  }
+
+  function fmtTime(ms) {
+    if (!isFinite(ms) || ms <= 0) { return "—"; }
+    var date = new Date(ms);
+    function pad(n) { return (n < 10 ? "0" : "") + n; }
+    return pad(date.getHours()) + ":" + pad(date.getMinutes()) + ":" + pad(date.getSeconds());
+  }
+
+  function fmtAgo(ms) {
+    if (!isFinite(ms) || ms <= 0) { return "sin datos"; }
+    var seconds = Math.max(0, Math.round((Date.now() - ms) / 1000));
+    if (seconds < 90) { return "hace " + seconds + " s"; }
+    if (seconds < 5400) { return "hace " + Math.round(seconds / 60) + " min"; }
+    return "hace " + Math.round(seconds / 3600) + " h";
+  }
+
+  /* ------------------------------------------------------------------ pintado */
+
+  function renderLive() {
+    var list = sortedPoints();
+    var last = list.length ? list[list.length - 1] : null;
+    if (!last) {
+      $("latlng").textContent = "—";
+      return;
+    }
+    $("latlng").textContent = last.lat.toFixed(6) + " , " + last.lng.toFixed(6);
+    $("when").textContent = fmtTime(last.ts) + " · " + fmtAgo(last.ts);
+    $("altitude").textContent = last.altitude === null
+      ? "—"
+      : fmt(last.altitude, 1, " m") + (last.altitudeSource ? " (" + last.altitudeSource + ")" : "");
+    $("accuracy").textContent = last.accuracy === null ? "—" : "±" + fmt(last.accuracy, 1, " m");
+    $("speed").textContent = last.speedKmh === null ? "—" : fmt(last.speedKmh, 1, " km/h");
+    $("bearing").textContent = last.bearing === null ? "—" : fmt(last.bearing, 0, "°");
+    $("provider").textContent = last.provider + (last.mock ? " · SIMULADA" : "");
+    $("satellites").textContent = last.satellites === null
+      ? "—"
+      : String(last.satellites) + (last.constellations ? " · " + last.constellations : "");
+    $("battery").textContent = last.battery === null || last.battery < 0
+      ? "—"
+      : String(last.battery) + "%" + (last.charging ? " (cargando)" : "");
+    $("network").textContent = last.network || "—";
+    $("activity").textContent = last.activity || "—";
+    var status = last.isTracking ? "rastreando" : "detenido";
+    if (last.fallback) { status += " · respaldo"; }
+    if (last.lastError) { status += " · error: " + last.lastError; }
+    $("status").textContent = status;
+    $("status").className = last.isTracking && !last.fallback ? "" : "warn";
+  }
+
+  function addRow(point) {
+    var row = document.createElement("tr");
+    state.rows.set(point.ts, row);
+    fillRow(row, point);
+    var body = $("historyBody");
+    // El historial se pinta del más nuevo al más antiguo, sin reordenar lo ya visible.
+    body.insertBefore(row, body.firstChild);
+    return row;
+  }
+
+  /** Rellena (o refresca) las celdas de una fila sin recrear el nodo: así no hay parpadeo. */
+  function fillRow(row, point) {
+    while (row.firstChild) {
+      row.removeChild(row.firstChild);
+    }
+    row.appendChild(cell(fmtTime(point.ts)));
+    row.appendChild(cell(point.lat.toFixed(6)));
+    row.appendChild(cell(point.lng.toFixed(6)));
+    row.appendChild(cell(point.accuracy === null ? "—" : fmt(point.accuracy, 1)));
+    row.appendChild(cell(point.speedKmh === null ? "—" : fmt(point.speedKmh, 1)));
+    row.appendChild(cell(point.provider));
+    row.appendChild(cell(point.battery === null || point.battery < 0 ? "—" : point.battery + "%"));
+    row.appendChild(cell(point.network || "—"));
+    row.appendChild(cell(point.activity || "—"));
+  }
+
+  function cell(text) {
+    var td = document.createElement("td");
+    td.textContent = text;
+    return td;
+  }
+
+  function renderHistory() {
+    var list = sortedPoints();
+    var missing = [];
+    for (var i = list.length - 1; i >= 0 && missing.length < MAX_ROWS; i--) {
+      if (!state.rows.has(list[i].ts)) { missing.push(list[i]); }
+    }
+    // addRow inserta al principio, así que se recorren de más antiguo a más nuevo: de otro modo el
+    // orden dentro del lote saldría invertido (la fila más nueva acabaría por debajo de las viejas).
+    for (var j = missing.length - 1; j >= 0; j--) { addRow(missing[j]); }
+    // Y los puntos ya pintados que llegaron corregidos se actualizan en su sitio, sin recrear nada.
+    var changed = state.changed || [];
+    for (var k = 0; k < changed.length; k++) {
+      var existing = state.rows.get(changed[k].ts);
+      if (existing) { fillRow(existing, changed[k]); }
+    }
+    state.changed = [];
+    var body = $("historyBody");
+    while (body.childNodes.length > MAX_ROWS) {
+      var lastNode = body.lastChild;
+      body.removeChild(lastNode);
+    }
+    $("historyCount").textContent = "(" + state.points.size + ")";
+    $("pointsTag").textContent = state.points.size + " puntos";
+  }
+
+  function renderTrack() {
+    var canvas = $("track");
+    var ctx = canvas.getContext("2d");
+    if (!ctx) { return; }
+    var width = canvas.width;
+    var height = canvas.height;
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(0, 0, width, height);
+
+    // Rejilla en púrpura: mismo par cromático que el resto de la interfaz.
+    ctx.strokeStyle = "rgba(128, 0, 128, 0.35)";
+    ctx.lineWidth = 1;
+    for (var gx = 1; gx < 6; gx++) {
+      ctx.beginPath();
+      ctx.moveTo((width / 6) * gx, 0);
+      ctx.lineTo((width / 6) * gx, height);
+      ctx.stroke();
+    }
+    for (var gy = 1; gy < 4; gy++) {
+      ctx.beginPath();
+      ctx.moveTo(0, (height / 4) * gy);
+      ctx.lineTo(width, (height / 4) * gy);
+      ctx.stroke();
+    }
+
+    var list = sortedPoints();
+    if (list.length === 0) {
+      ctx.fillStyle = "#00FFFF";
+      ctx.font = "20px ui-monospace, monospace";
+      ctx.fillText("sin puntos todavía", 24, 42);
+      $("trackInfo").textContent = "—";
+      return;
+    }
+
+    var bounds = { minLat: Infinity, maxLat: -Infinity, minLng: Infinity, maxLng: -Infinity };
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i];
+      bounds.minLat = Math.min(bounds.minLat, p.lat);
+      bounds.maxLat = Math.max(bounds.maxLat, p.lat);
+      bounds.minLng = Math.min(bounds.minLng, p.lng);
+      bounds.maxLng = Math.max(bounds.maxLng, p.lng);
+    }
+    var pad = 26;
+    var spanLat = Math.max(bounds.maxLat - bounds.minLat, 1e-6);
+    var spanLng = Math.max(bounds.maxLng - bounds.minLng, 1e-6);
+    var scaleLat = (height - pad * 2) / spanLat;
+    var scaleLng = (width - pad * 2) / spanLng;
+    var scale = Math.min(scaleLat, scaleLng);
+    var offsetX = pad + ((width - pad * 2) - spanLng * scale) / 2;
+    var offsetY = pad + ((height - pad * 2) - spanLat * scale) / 2;
+
+    function toX(lng) { return offsetX + (lng - bounds.minLng) * scale; }
+    function toY(lat) { return offsetY + (bounds.maxLat - lat) * scale; }
+
+    // Traza bruta (púrpura, discontinua) y filtrada (cian) para poder compararlas de un vistazo.
+    drawPolyline(ctx, list, false, toX, toY, "rgba(128, 0, 128, 0.9)", 2, [6, 5]);
+    drawPolyline(ctx, list, true, toX, toY, "#00FFFF", 2, []);
+
+    var newest = list[list.length - 1];
+    var hasSmooth = newest.smoothLat !== null && newest.smoothLng !== null;
+    var markerLat = hasSmooth ? newest.smoothLat : newest.lat;
+    var markerLng = hasSmooth ? newest.smoothLng : newest.lng;
+    var mx = toX(markerLng);
+    var my = toY(markerLat);
+
+    ctx.fillStyle = "#00FFFF";
+    ctx.beginPath();
+    ctx.arc(mx, my, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#800080";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(mx, my, 11, 0, Math.PI * 2);
+    ctx.stroke();
+
+    if (newest.bearing !== null) {
+      var rad = (newest.bearing - 90) * Math.PI / 180;
+      ctx.strokeStyle = "#00FFFF";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(mx, my);
+      ctx.lineTo(mx + Math.cos(rad) * 26, my + Math.sin(rad) * 26);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = "#00FFFF";
+    ctx.font = "13px ui-monospace, monospace";
+    ctx.fillText("N", width - 26, 20);
+    ctx.fillText("lat " + bounds.minLat.toFixed(5) + " … " + bounds.maxLat.toFixed(5), pad, height - 10);
+    ctx.fillStyle = "#800080";
+    ctx.fillText("lng " + bounds.minLng.toFixed(5) + " … " + bounds.maxLng.toFixed(5), pad, height - 26);
+
+    $("trackInfo").textContent = list.length + " puntos · desde " + fmtTime(list[0].ts) + " hasta " + fmtTime(newest.ts);
+  }
+
+  function drawPolyline(ctx, list, smooth, toX, toY, color, width, dash) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    if (ctx.setLineDash) { ctx.setLineDash(dash); }
+    ctx.beginPath();
+    var started = false;
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i];
+      var lat = smooth && p.smoothLat !== null ? p.smoothLat : p.lat;
+      var lng = smooth && p.smoothLng !== null ? p.smoothLng : p.lng;
+      if (smooth && p.smoothLat === null) { continue; }
+      var x = toX(lng);
+      var y = toY(lat);
+      if (!started) {
+        ctx.moveTo(x, y);
+        started = true;
+      } else {
+        ctx.lineTo(x, y);
+      }
+    }
+    ctx.stroke();
+    if (ctx.setLineDash) { ctx.setLineDash([]); }
+  }
+
+  function renderDiagnostics() {
+    $("diagOk").textContent = state.lastOkAt ? fmtTime(state.lastOkAt) + " · " + fmtAgo(state.lastOkAt) : "nunca";
+    $("diagHttp").textContent = state.httpStatus ? String(state.httpStatus) : "—";
+    $("diagErrors").textContent = String(state.consecutiveErrors);
+    $("diagErrors").className = state.consecutiveErrors ? "warn" : "";
+    $("diagLastError").textContent = state.lastError || "—";
+    $("diagLastError").className = state.lastError ? "warn" : "";
+    $("diagBatch").textContent = String(state.lastBatch);
+    $("diagTotal").textContent = String(state.received);
+    $("diagDupes").textContent = String(state.duplicates);
+    $("diagUrl").textContent = state.url;
+    $("ageTag").textContent = state.lastOkAt ? fmtAgo(state.lastOkAt) : "sin datos";
+
+    var pulse = $("pulse");
+    var link = $("linkState");
+    if (state.consecutiveErrors > 0) {
+      pulse.className = "pulse err";
+      link.textContent = "reintentando (" + state.consecutiveErrors + ")";
+    } else if (state.lastOkAt) {
+      pulse.className = "pulse";
+      link.textContent = "en vivo";
+    } else {
+      pulse.className = "pulse off";
+      link.textContent = "esperando";
+    }
+  }
+
+  function render() {
+    renderLive();
+    renderHistory();
+    renderTrack();
+    renderDiagnostics();
+  }
+
+  /* ------------------------------------------------------------------ sondeo */
+
+  function poll(force) {
+    if (!force && document.hidden) {
+      // Con la pestaña oculta no se sondea: GitHub da 60 lecturas/hora sin autenticar y no tiene
+      // sentido gastarlas mientras nadie mira. Al volver a la pestaña se lee de inmediato.
+      scheduleNext();
+      return;
+    }
+    if (state.inFlight) {
+      // Ya hay una lectura en curso (el botón, el cambio de pestaña y el temporizador pueden
+      // coincidir): dos peticiones simultáneas duplicarían los contadores y entrelazarían fusiones.
+      scheduleNext();
+      return;
+    }
+    state.inFlight = true;
+    state.lastAttemptAt = Date.now();
+    var request;
+    try {
+      request = fetch(withCacheBuster(state.url), { cache: "no-store", mode: "cors" });
+    } catch (e) {
+      state.inFlight = false;
+      onFailure(e);
+      return;
+    }
+    request.then(function (response) {
+      state.httpStatus = response.status;
+      if (!response.ok) {
+        throw new Error("HTTP " + response.status);
+      }
+      return response.text();
+    }).then(function (text) {
+      var parsed = parsePayload(text);
+      if (parsed === null) {
+        // Fichero a medio escribir o respuesta inesperada: se conserva lo que ya había en pantalla.
+        throw new Error("respuesta no interpretable (se conserva la vista anterior)");
+      }
+      state.lastBatch = parsed.length;
+      var added = merge(parsed);
+      state.lastOkAt = Date.now();
+      state.lastError = "";
+      state.consecutiveErrors = 0;
+      render();
+      if (added > 0) {
+        $("footer").textContent = "+" + added + " puntos nuevos · " + state.points.size
+          + " en memoria (dedupe por timestamp_ms)";
+      }
+    }).catch(function (error) {
+      onFailure(error);
+    }).then(function () {
+      state.inFlight = false;
+      scheduleNext();
+    });
+  }
+
+  function onFailure(error) {
+    state.consecutiveErrors++;
+    var message = error && error.message ? error.message : String(error);
+    // Un fallo de red o una lectura sucia NUNCA borra el historial: solo se anota y se reintenta.
+    state.lastError = message;
+    renderDiagnostics();
+  }
+
+  function scheduleNext() {
+    if (state.timer) { window.clearTimeout(state.timer); }
+    state.timer = window.setTimeout(function () { poll(false); }, POLL_MS);
+  }
+
+  function download() {
+    try {
+      var list = sortedPoints();
+      var blob = new Blob([JSON.stringify(list, null, 2)], { type: "application/json" });
+      var link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "telemetria-" + new Date().toISOString().replace(/[:.]/g, "-") + ".json";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.setTimeout(function () { URL.revokeObjectURL(link.href); }, 4000);
+    } catch (e) {
+      state.lastError = "no se pudo exportar: " + (e && e.message ? e.message : e);
+      renderDiagnostics();
+    }
+  }
+
+  function clearView() {
+    state.points.clear();
+    state.rows.clear();
+    state.fingerprints.clear();
+    state.changed = [];
+    state.received = 0;
+    state.duplicates = 0;
+    state.lastBatch = 0;
+    $("historyBody").innerHTML = "";
+    render();
+  }
+
+  function bind() {
+    $("applyBtn").addEventListener("click", function () {
+      var value = $("urlInput").value.trim();
+      if (value.indexOf("http") !== 0) {
+        state.lastError = "la URL debe empezar por http(s)";
+        renderDiagnostics();
+        return;
+      }
+      state.url = value;
+      saveUrl(value);
+      state.lastError = "";
+      poll(true);
+    });
+    $("reloadBtn").addEventListener("click", function () { poll(true); });
+    $("downloadBtn").addEventListener("click", download);
+    $("clearBtn").addEventListener("click", clearView);
+    $("urlInput").addEventListener("keydown", function (event) {
+      if (event.key === "Enter") { $("applyBtn").click(); }
+    });
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) { poll(true); }
+    });
+  }
+
+  loadUrl();
+  bind();
+  render();
+  poll(true);
+})();
+</script>
+</body>
+</html>

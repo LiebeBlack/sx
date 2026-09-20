@@ -1,7 +1,8 @@
 """Generador de telemetría sintética con GNSS, sensores y ruido realista.
 
     python tools/simulate.py --url http://127.0.0.1:8000/api/location --devices 2 --interval 2
-    python tools/simulate.py --devices 1 --noisy          # inyecta saltos y fixes de baja calidad
+    python tools/simulate.py --devices 1 --noisy           # saltos y fixes de baja calidad
+    python tools/simulate.py --devices 1 --teleport        # salto de 150-250 m en cada vuelta
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ WIFI_POOL = [
     {"ssid": "IoT_AP", "bssid": "9c:5c:8e:ee:ff:04", "rssi": -77, "frequency": 2412, "channel": 1},
 ]
 CONSTELLATIONS = "GPS,GLONASS,GALILEO,BEIDOU"
+DECLINATION_DEG = -1.4   # declinación magnética aproximada de la península ibérica
 
 
 def post(url: str, key: str, payload: dict) -> tuple[int, str]:
@@ -56,10 +58,15 @@ def activity_of(speed: float) -> str:
     return "vehicle"
 
 
-def point_for(device_id: str, state: dict, noisy: bool) -> dict:
+def point_for(device_id: str, state: dict, noisy: bool, teleport: bool = False) -> dict:
     accuracy = random.uniform(4.0, 18.0)
     lat, lng = state["lat"], state["lng"]
     speed = state["speed"]
+
+    if teleport:
+        # Salto de 150-250 m en un único intervalo. A 3 s de cadencia son 50-83 m/s: pasa el
+        # umbral de velocidad (90 m/s), así que solo la regla de salto > 150 m lo descarta.
+        lat += random.choice((-1.0, 1.0)) * random.uniform(0.00135, 0.0022)
 
     if noisy and random.random() < 0.06:
         # salto imposible (~300 m) o fix de baja calidad: el servidor debe filtrarlos
@@ -71,6 +78,7 @@ def point_for(device_id: str, state: dict, noisy: bool) -> dict:
             accuracy = random.uniform(160.0, 400.0)
 
     satellites_visible = random.randint(6, 22)
+    magnetic_heading = (state["bearing"] + random.uniform(-4, 4)) % 360
     return {
         "device_id": device_id,
         "label": device_id.upper(),
@@ -87,7 +95,9 @@ def point_for(device_id: str, state: dict, noisy: bool) -> dict:
         "pressure_hpa": round(1013.25 * (1.0 - state["baro"] / 44330.0) ** (1.0 / 0.1903), 2),
         "speed_mps": round(speed, 2),
         "bearing": round(state["bearing"], 1),
-        "heading_magnetic": round((state["bearing"] + random.uniform(-4, 4)) % 360, 1),
+        "heading_magnetic": round(magnetic_heading, 1),
+        "heading_true": round((magnetic_heading + DECLINATION_DEG + 360.0) % 360.0, 1),
+        "declination_deg": DECLINATION_DEG,
         "battery": round(state["battery"], 1),
         "steps": state["steps"],
         "activity": activity_of(speed),
@@ -126,6 +136,8 @@ def main() -> None:
     parser.add_argument("--lng", type=float, default=-3.7038)
     parser.add_argument("--rounds", type=int, default=0, help="0 = infinito")
     parser.add_argument("--noisy", action="store_true", help="inyecta saltos y fixes malos")
+    parser.add_argument("--teleport", action="store_true",
+                        help="un salto de 150-250 m por vuelta (prueba la regla de > 150 m)")
     args = parser.parse_args()
 
     devices = {}
@@ -150,7 +162,7 @@ def main() -> None:
             state["elapsed_ns"] += int(args.interval * 1e9)
             state["baro"] += random.uniform(-1.2, 1.2)
             state["battery"] = max(1.0, state["battery"] - args.interval * 0.01)
-            points.append(point_for(device_id, state, args.noisy))
+            points.append(point_for(device_id, state, args.noisy, args.teleport))
 
         status, text = post(args.url, args.key, {"points": points})
         print(f"[{round_number}] HTTP {status} {len(points)} punto(s) -> {text[:110]}", flush=True)

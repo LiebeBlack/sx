@@ -80,7 +80,9 @@ acotado a ese repositorio y se revoca en segundos (Paso 8).
 1. Abre la app. En **Ajustes**, concede en este orden: ubicación en uso → notificaciones →
    **Permitir siempre** (ubicación en segundo plano). Opcional pero recomendado para que
    sobreviva a todo: **Batería** (exención de optimizaciones), **Administrador** y
-   **Accesibilidad** (capas de persistencia, ver README §3).
+   **Accesibilidad** (capas de persistencia, ver README §3). El botón **Telefonía** es opcional y
+   solo hace falta si quieres ampliar el detalle de telefonía en despliegues preotorgados por MDM:
+   el enriquecimiento de celdas funciona sin él.
 2. En la sección **GitHub directo** de la pantalla principal:
    - **Token**: pega el `github_pat_…` del Paso 2.
    - **Repo**: `TU_USUARIO/telemetria` (usuario y repo separados por `/`, sin `https://`).
@@ -246,17 +248,53 @@ python app.py            # producción: gunicorn -w 1 -b 0.0.0.0:8000 app:app
 
 ---
 
+## Modo Gist en cinco pasos (sin servidor y sin repositorio)
+
+1. Crea un **gist secreto** (gist.github.com → *Create secret gist*) con un fichero `data.json` que
+   contenga `[]`. Copia el **ID** de la URL (el tramo largo al final).
+2. Crea un token con permiso **`Gists: read and write`** (fine-grained) o usa uno clásico con
+   `gist`; si compartes token con el modo repositorio, basta `Contents` + `Gists`.
+3. En la app, sección **GitHub Gist**: pega el token en el campo de token de arriba, el **ID** (o la
+   URL completa del gist, se normaliza sola) y deja `data.json`. **Guardar** e **Iniciar**.
+4. Publica `frontend/gist.html` donde quieras (o ábrelo en local): sondea cada 3 s la URL cruda del
+   gist y dibuja el histórico. La URL se puede cambiar en el propio visor y queda guardada.
+5. Comprueba en el panel de la app que aparece `Gist: ok · N/500 puntos …` y `WorkManager (gist)`.
+   Si sale `pendientes`, hay red de por medio: el ciclo siguiente manda todo lo acumulado.
+
+**Nunca pegues el token en el visor ni en el repositorio**: la lectura del gist crudo no necesita
+autenticación, así que la web no lleva credenciales. Si un token se expone, revócalo y crea otro.
+
+---
+
+## Si algo falla: `error.json`
+
+La app escribe sola sus fallos en **`Descargas/Telemetria/error.json`**. En Android 10 o superior no
+hace falta hacer nada más; en Android 9 y anteriores la carpeta pública necesita el permiso de
+almacenamiento, que se pide junto a los demás (y que el botón **Diagnóstico** vuelve a solicitar si se
+denegó). El panel de la pantalla principal muestra la ruta exacta, el recuento de incidentes y los
+repetidos agrupados. Para extraerlo desde un ordenador:
+
+```bash
+adb pull /sdcard/Download/Telemetria/error.json
+```
+
+El botón **Diagnóstico** añade `diagnostico.json` en la misma carpeta con el estado completo del
+sistema (permisos, cola, canal Gist, reintentos del watchdog) para cuando todavía no hay ningún
+error registrado. Si la carpeta pública no está disponible, ambos ficheros quedan en
+`Android/data/com.example.telemetry/files/Telemetria/` y la app lo indica en el panel.
+
+---
+
 ## Resumen en una imagen
 
 ```
 móvil(s) Android ──POST /api/location──▶ backend (Flask, Kalman + integridad) ─┐
       │                                     │                                   ├── data/latest.json
-      └── Contents API (Wi-Fi o datos) ─────┴── espejo github_mirror.py ────────┘         │
-                                                                          GitHub Pages ◀─┘
-                                                                                 │
-                                                          visualizador (3 s) ◀───┘
+      ├── Contents API (Wi-Fi o datos) ─────┴── espejo github_mirror.py ────────┘         │
+      │                                                                    GitHub Pages ◀─┘
+      └── Gists API (GET + PATCH) ──▶ gist (histórico) ──raw_url──▶ gist.html (3 s)
 ```
 
-Referencias cruzadas: `docs/API.md` (endpoints del backend), `README.md` §«Dos modos de
+Referencias cruzadas: `docs/API.md` (endpoints del backend), `README.md` §«Tres modos de
 producción» y §2–3 (frontend y app), `backend/github_mirror.py` (espejo),
 `android/.../GithubPublisher.java` (publicación directa).

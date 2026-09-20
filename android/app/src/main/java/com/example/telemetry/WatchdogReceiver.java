@@ -23,7 +23,19 @@ public class WatchdogReceiver extends BroadcastReceiver {
             return;
         }
         // 'tracking_enabled' sobrevive a reinicios: basta con rearmar la alarma y verificar el servicio.
-        Watchdog.arm(context);
-        Watchdog.ensureService(context);
+        try {
+            Watchdog.arm(context);
+            Watchdog.ensureService(context);
+            // Segunda vía con reglas distintas: WorkManager reintenta por su cuenta y, tras un reinicio,
+            // vuelve a intentarlo un minuto después, cuando el sistema ya no acaba de arrancar.
+            TelemetryWorker.schedulePeriodic(context);
+            if (action.contains("BOOT_COMPLETED") || action.contains("QUICKBOOT") || action.contains("MY_PACKAGE_REPLACED")) {
+                TelemetryWorker.scheduleBootRetry(context);
+            }
+        } catch (Throwable t) {
+            // Un receptor que lanza una excepción es fatal para la persistencia: se registra y se sigue.
+            Log.e(TAG, "fallo al rearmar el rastreo: " + t.getMessage());
+            ErrorLogger.record("WatchdogReceiver", "fallo al rearmar tras " + action, t);
+        }
     }
 }

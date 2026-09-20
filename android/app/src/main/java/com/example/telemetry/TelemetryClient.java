@@ -63,12 +63,14 @@ public final class TelemetryClient {
     private static final long RETRY_CYCLE_MS = 15_000L;
     private static final long PERSIST_MIN_INTERVAL_MS = 10_000L;
     private static final int MAX_RESPONSE_BYTES = 8_192;
+    /** Código interno: no hay red. Se distingue de -1 (fallo de conexión) para la notificación. */
+    private static final int NO_NETWORK = -3;
 
     private static volatile TelemetryClient instance;
 
     private final Context context;
     private final SharedPreferences prefs;
-    private final ExecutorService io;
+    private volatile ExecutorService io;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Object queueLock = new Object();
     private final ArrayDeque<JSONObject> queue = new ArrayDeque<>();
@@ -85,7 +87,15 @@ public final class TelemetryClient {
     private TelemetryClient(Context context) {
         this.context = context.getApplicationContext();
         this.prefs = this.context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        this.io = Executors.newSingleThreadExecutor(new ThreadFactory() {
+        this.io = newIo();
+        this.endpoint = prefs.getString(KEY_ENDPOINT, "");
+        this.apiKey = prefs.getString(KEY_API_KEY, "");
+        this.deviceId = prefs.getString(KEY_DEVICE_ID, "android-" + Long.toHexString(System.currentTimeMillis()));
+        loadQueue();
+    }
+
+    private static ExecutorService newIo() {
+        return Executors.newSingleThreadExecutor(new ThreadFactory() {
             @Override
             public Thread newThread(Runnable runnable) {
                 Thread thread = new Thread(runnable, "telemetry-io");
@@ -93,10 +103,24 @@ public final class TelemetryClient {
                 return thread;
             }
         });
-        this.endpoint = prefs.getString(KEY_ENDPOINT, "");
-        this.apiKey = prefs.getString(KEY_API_KEY, "");
-        this.deviceId = prefs.getString(KEY_DEVICE_ID, "android-" + Long.toHexString(System.currentTimeMillis()));
-        loadQueue();
+    }
+
+    /**
+     * Ejecutor de I/O auto-reparable.
+     *
+     * <p>Este cliente es un singleton de proceso y el sistema mata el servicio cuando le conviene:
+     * {@code onDestroy} cierra el worker, pero el watchdog relanza el servicio en el MISMO proceso
+     * y vuelve a pedir esta misma instancia. Si el ejecutor se quedase muerto, cada envío lanzaría
+     * {@code RejectedExecutionException} y la telemetría dejaría de subir puntos en silencio para
+     * siempre; por eso se recrea bajo demanda.</p>
+     */
+    private synchronized ExecutorService io() {
+        ExecutorService current = io;
+        if (current == null || current.isShutdown() || current.isTerminated()) {
+            current = newIo();
+            io = current;
+        }
+        return current;
     }
 
     public static TelemetryClient get(Context context) {
@@ -177,20 +201,67 @@ public final class TelemetryClient {
         if (endpoint.isEmpty() || !flushing.compareAndSet(false, true)) {
             return;
         }
+        Runnable drainTask = new Runnable() {
+            @Override
+            public void run() {
+                drain();
+            }
+        };
         try {
-            io.execute(new Runnable() {
-                @Override
-                public void run() {
-                    drain();
-                }
-            });
+            io().execute(drainTask);
         } catch (RejectedExecutionException e) {
-            flushing.set(false);
+            // Carrera con shutdown(): se reintenta una sola vez con un ejecutor nuevo.
+            try {
+                io().execute(drainTask);
+            } catch (RejectedExecutionException retry) {
+                flushing.set(false);
+                // Esto no debería ocurrir nunca (el ejecutor se recrea bajo demanda): si pasa, es un
+                // defecto real y tiene que quedar registrado en vez de morir en silencio.
+                ErrorLogger.record("TelemetryClient/flush", "el ejecutor rechazó el vaciado de cola", retry);
+            }
         }
     }
 
+    /**
+     * Vaciado síncrono desde un hilo de trabajo propio (WorkManager).
+     *
+     * <p>Es la vía de transmisión que <b>no depende</b> de que el servicio en primer plano pueda
+     * arrancar: WorkManager tiene su propia ventana de ejecución y no le afectan las restricciones
+     * de arranque en segundo plano de Android 12+, así que puede entregar los puntos que quedaron
+     * en la cola persistida aunque el rastreo esté bloqueado por el sistema.</p>
+     *
+     * @return número de puntos entregados en esta llamada (0 si no había nada o no había red).
+     */
+    public int flushBlocking() {
+        if (endpoint.isEmpty()) {
+            return 0;
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            // Regla de la casa: el hilo principal nunca se bloquea con I/O.
+            flushAsync();
+            return 0;
+        }
+        if (!flushing.compareAndSet(false, true)) {
+            return 0;   // ya hay un vaciado en curso en otro hilo: ese se encarga
+        }
+        int before = queued();
+        try {
+            drain();
+        } catch (Throwable t) {
+            // Ningún fallo del trabajo debe propagarse como excepción: WorkManager lo reintentaría
+            // en vano y la cola sigue persistida para el siguiente intento.
+            Log.w(TAG, "vaciado síncrono interrumpido: " + t.getMessage());
+            ErrorLogger.record("TelemetryClient/flushBlocking", "vaciado síncrono interrumpido", t);
+        }
+        return Math.max(0, before - queued());
+    }
+
+    /** Cierra el worker tras persistir la cola. La instancia sigue usable: el ejecutor se recrea. */
     public void shutdown() {
-        io.shutdownNow();
+        ExecutorService current = io;
+        if (current != null) {
+            current.shutdownNow();
+        }
         synchronized (queueLock) {
             persistLocked(true);
         }
@@ -203,6 +274,9 @@ public final class TelemetryClient {
         int lastCode = 0;
         try {
             if (!isOnline()) {
+                // Sin red: se avisa al listener para que la notificación lo diga, y el heartbeat
+                // del servicio reintentará en el siguiente ciclo en lugar de esperar en silencio.
+                notifyListener(NO_NETWORK, 0);
                 return;
             }
             int attempt = 0;
@@ -337,6 +411,7 @@ public final class TelemetryClient {
             return -1;
         } catch (JSONException e) {
             Log.e(TAG, "payload inválido", e);
+            ErrorLogger.record("TelemetryClient/post", "el lote no se pudo serializar", e);
             return -2;
         } finally {
             if (connection != null) {

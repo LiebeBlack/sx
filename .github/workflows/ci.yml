@@ -43,16 +43,36 @@ jobs:
       - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.7"
+          gradle-version: "8.9"
       - name: Wrapper y compilación
         working-directory: android
         run: |
-          gradle wrapper --gradle-version 8.7
+          gradle wrapper --gradle-version 8.9
           ./gradlew assembleDebug --no-daemon --stacktrace
+      - name: APK de release (valida las reglas ProGuard extremas)
+        # Sin keystore.properties el release se firma con la clave de depuración, así que este paso
+        # siempre compila: si una regla de ofuscación rompe R8, la CI falla aquí y no en el móvil.
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+      - name: Comprobar que el manifest sobrevive a la ofuscación
+        # Los componentes que el sistema arranca por nombre (manifest, alarmas) deben seguir intactos.
+        working-directory: android/app/build/outputs/apk/release
+        run: |
+          unzip -o -q app-release.apk 'classes*.dex' -d /tmp/dex
+          # TelemetryWorker no está en el manifest, pero WorkManager lo instancia por nombre de
+          # clase: si R8 lo renombra, la segunda vía de persistencia deja de ejecutarse en silencio.
+          # TelemetryApp es la clase Application: el sistema la instancia por nombre desde el manifest.
+          for component in TelemetryApp MainActivity LocationTrackerService WatchdogReceiver TelemetryAdminReceiver TelemetryAccessibilityService TelemetryWorker; do
+            grep -aqs "com/example/telemetry/$component" /tmp/dex/classes*.dex \
+              || { echo "::error::R8 renombró $component: el sistema no podría instanciarlo"; exit 1; }
+          done
+          echo "componentes del manifest intactos tras la ofuscación"
       - name: Subir APK
         uses: actions/upload-artifact@v4
         with:
-          name: telemetria-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: telemetria-apk
+          path: |
+            android/app/build/outputs/apk/debug/app-debug.apk
+            android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14

@@ -59,6 +59,10 @@ class ApiSinClaveTest(unittest.TestCase):
         body = self.client.get("/api/health").get_json()
         self.assertTrue(body["ok"])
         self.assertFalse(body["auth"])
+        # Los umbrales del filtro son observables: sirven para depurar trazas en producción.
+        self.assertEqual(body["filter"]["max_jump_m"], 150.0)
+        self.assertEqual(body["filter"]["plausible_speed_mps"], 60.0)
+        self.assertEqual(body["filter"]["max_speed_mps"], 90.0)
 
     def test_ingesta_y_lectura_compacta(self):
         created = self.client.post("/api/location", json=point())
@@ -70,8 +74,11 @@ class ApiSinClaveTest(unittest.TestCase):
         self.assertEqual(listed["count"], 1)
         device = listed["devices"][0]
         self.assertEqual(device["device_id"], "api-dev")
-        self.assertEqual(len(device["points"][0]), 8)          # [ts, lat, lng, speed, bearing, accuracy, battery, activity]
+        # [ts, lat, lng, speed, bearing, accuracy, battery, activity, smooth_lat, smooth_lng]
+        self.assertEqual(len(device["points"][0]), 10)
         self.assertAlmostEqual(device["points"][0][1], 40.4168, places=6)
+        self.assertAlmostEqual(device["points"][0][8], 40.4168, places=6)   # smooth_lat del primer punto
+        self.assertAlmostEqual(device["points"][0][9], -3.7038, places=6)   # smooth_lng del primer punto
         self.assertAlmostEqual(device["smooth"][0][1], 40.4168, places=6)
         self.assertEqual(device["summary"]["satellites"], 8)
         self.assertEqual(device["summary"]["points"], 1)

@@ -1,4 +1,6 @@
-// Proyecto raíz: solo declara el plugin de Android Gradle. Requiere JDK 17 y Gradle 8.7+.
+// Proyecto raíz: solo declara el plugin de Android Gradle. Requiere JDK 17 y Gradle 8.9+.
+// AGP 8.7.3 es la primera línea estable que compila contra Android 15 (API 35);
+// para compilar contra Android 16 (API 36) hace falta AGP 8.9.1+ y Gradle 8.11.1+.
 plugins {
-    id 'com.android.application' version '8.5.2' apply false
+    id 'com.android.application' version '8.7.3' apply false
 }

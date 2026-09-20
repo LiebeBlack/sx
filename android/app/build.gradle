@@ -13,14 +13,18 @@ if (hasKeystore) {
 
 android {
     namespace 'com.example.telemetry'
-    compileSdk 34
+    // API 35 = Android 15. compileSdk 35 y targetSdk 35 (requisito de Play desde agosto de 2025),
+    // minSdk 24. El objetivo real de despliegue es Android 11 (API 30) hasta Android 15/16: todo lo
+    // que se usa API 31+ está guardado por versión, y lo que falta en versiones viejas lo cubre el
+    // motor fusionado de Google o una alternativa del SDK.
+    compileSdk 35
 
     defaultConfig {
         applicationId 'com.example.telemetry'
         minSdk 24
-        targetSdk 34
-        versionCode 3
-        versionName '1.2.0'
+        targetSdk 35
+        versionCode 7
+        versionName '1.7.0'
     }
 
     signingConfigs {
@@ -59,5 +63,12 @@ android {
 }
 
 dependencies {
-    // Ninguna: org.json, HttpURLConnection, sensores, GNSS y telefonía son del SDK.
+    // Solo dos dependencias, y las dos son opcionales en tiempo de ejecución (se comprueba antes
+    // de usarlas, con caída al SDK puro si no están):
+    //  · play-services-location: el motor fusionado de Google, que da WAIT_FOR_ACCURATE_LOCATION
+    //    también en Android 11 (la API equivalente del framework solo existe desde Android 12).
+    //  · work-runtime: WorkManager como segunda vía de persistencia junto a la alarma del watchdog.
+    // Todo lo demás sigue siendo SDK puro: org.json, HttpURLConnection, sensores, GNSS, telefonía.
+    implementation 'com.google.android.gms:play-services-location:21.3.0'
+    implementation 'androidx.work:work-runtime:2.9.1'
 }

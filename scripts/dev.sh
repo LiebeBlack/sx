@@ -2,7 +2,8 @@
 # Tareas habituales del proyecto. Uso: scripts/dev.sh <comando>
 #   install    instala las dependencias del backend
 #   run        arranca el servidor (sirve también el visualizador en /)
-#   test       ejecuta los tests y valida el JavaScript del frontend
+#   test       ejecuta los tests y valida el JavaScript de los dos visores
+#   gist       valida un documento del canal Gist (mismo contrato que el publicador Android)
 #   simulate   genera tráfico sintético (--noisy para probar los filtros)
 #   apk        compila el APK de depuración
 #   lint       compila en modo lint del backend y valida el frontend
@@ -23,6 +24,10 @@ case "${1:-help}" in
     "$PYTHON" -m unittest discover -s tests -v
     "$PYTHON" tools/check_frontend.py
     ;;
+  gist)
+    shift || true
+    "$PYTHON" "$ROOT/tools/gist_schema.py" "$@"
+    ;;
   simulate)
     shift || true
     "$PYTHON" "$ROOT/tools/simulate.py" --url "${TELEMETRY_URL:-http://127.0.0.1:8000/api/location}" "$@"
@@ -30,8 +35,9 @@ case "${1:-help}" in
   apk)
     cd "$ROOT/android"
     if [ ! -x ./gradlew ]; then
-      command -v gradle >/dev/null 2>&1 || { echo "instala Gradle 8.7+ o abre el proyecto en Android Studio"; exit 1; }
-      gradle wrapper --gradle-version 8.7
+      # AGP 8.7.3 exige Gradle 8.9 o superior: fijar el wrapper a una versión menor rompe el build.
+      command -v gradle >/dev/null 2>&1 || { echo "instala Gradle 8.9+ o abre el proyecto en Android Studio"; exit 1; }
+      gradle wrapper --gradle-version 8.9
     fi
     ./gradlew assembleDebug
     echo "APK: android/app/build/outputs/apk/debug/app-debug.apk"

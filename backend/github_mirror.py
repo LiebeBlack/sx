@@ -63,6 +63,17 @@ def status() -> Dict[str, Any]:
     }
 
 
+def is_due() -> bool:
+    """¿Toca publicar? El llamante lo consulta antes de serializar el estado completo.
+
+    Sin esta guarda, cada POST construía el snapshot de todos los dispositivos (miles de puntos)
+    para que ``publish_if_due`` lo descartara 59 de cada 60 veces por rate limit.
+    """
+    if _config() is None:
+        return False
+    return (time.monotonic() - _last_publish_at) >= MIN_INTERVAL_S
+
+
 def _api_request(method: str, url: str, token: str, body: Optional[Dict[str, Any]] = None) -> tuple[int, Dict[str, Any]]:
     data = None
     headers = {

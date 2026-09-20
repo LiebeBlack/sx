@@ -35,12 +35,25 @@ MAX_BATCH = 500
 EARTH_RADIUS_M = 6371008.8
 DAY_MS = 86_400_000
 MIN_TS_MS = 978_307_200_000  # 2001-01-01
-MAX_IMPLIED_SPEED_MPS = 90.0    # 324 km/h: por encima se trata como salto de posición
-MAX_TRUSTED_ACCURACY_M = 150.0  # los fixes peores que esto no suman distancia
+
+
+def _env_float(name: str, default: float) -> float:
+    """Umbral configurable por entorno; si el valor no es numérico se usa el de fábrica."""
+    try:
+        return float(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+# --- Filtros de integridad (ajustables por entorno sin tocar el código) ------------------
+MAX_IMPLIED_SPEED_MPS = _env_float("TELEMETRY_MAX_SPEED_MPS", 90.0)      # 324 km/h: imposible
+MAX_JUMP_M = _env_float("TELEMETRY_MAX_JUMP_M", 150.0)                   # salto de teleport
+PLAUSIBLE_SPEED_MPS = _env_float("TELEMETRY_PLAUSIBLE_SPEED", 60.0)      # 216 km/h
+MAX_TRUSTED_ACCURACY_M = _env_float("TELEMETRY_MAX_ACCURACY_M", 150.0)   # peores: no suman
+MAX_GAP_SECONDS = _env_float("TELEMETRY_MAX_GAP_S", 120.0)               # hueco: reinicia filtro
 A_PROCESS_MPS2 = 1.5            # aceleración supuesta en el ruido de proceso del filtro
 DEFAULT_ACCURACY_M = 25.0       # precisión asumida cuando el cliente no la informa
 ACCURACY_INFLATION = 1.8        # la precisión del GPS es un radio del 68 %: el error real es mayor
-MAX_GAP_SECONDS = 120.0         # hueco mayor: se reinicia el filtro y no se cuenta el tramo
 
 app = Flask(__name__)
 app.json.sort_keys = False
@@ -133,6 +146,10 @@ def _sanitize_list(raw: Any, allowed: frozenset[str], limit: int = 32) -> List[D
 
 WIFI_FIELDS = frozenset({"ssid", "bssid", "rssi", "level", "frequency", "channel", "connected", "capabilities"})
 CELL_FIELDS = frozenset({"type", "mcc", "mnc", "cid", "lac", "tac", "pci", "dbm", "rsrp", "rsrq", "level", "registered"})
+# Distancias Wi-Fi RTT (802.11mc): la única medida geométrica real en interiores.
+RTT_FIELDS = frozenset({"bssid", "distance_m", "std_dev_m", "rssi"})
+# Detalle por satélite: constelación, identificador, C/N0, uso y geometría.
+GNSS_SAT_FIELDS = frozenset({"sys", "svid", "cn0", "used", "elev", "azim"})
 
 
 def _sanitize_gnss(raw: Any) -> Dict[str, Any] | None:
@@ -151,6 +168,9 @@ def _sanitize_gnss(raw: Any) -> Dict[str, Any] | None:
     constellations = raw.get("constellations")
     if isinstance(constellations, str) and constellations:
         out["constellations"] = constellations[:64]
+    satellites = _sanitize_list(raw.get("sats"), GNSS_SAT_FIELDS, limit=24)
+    if satellites:
+        out["sats"] = satellites
     return out or None
 
 
@@ -180,6 +200,9 @@ def _sanitize(raw: Any) -> Dict[str, Any]:
         "timestamp": _norm_ts(raw.get("timestamp", raw.get("ts", _now_ms()))),
         "accuracy": _optional_num(raw.get("accuracy"), "accuracy", 0.0, 100_000.0),
         "altitude": _optional_num(raw.get("altitude"), "altitude", -500.0, 20_000.0),
+        "altitude_msl": _optional_num(raw.get("altitude_msl"), "altitude_msl", -500.0, 20_000.0),
+        "altitude_msl_accuracy": _optional_num(raw.get("altitude_msl_accuracy"), "altitude_msl_accuracy", 0.0, 100_000.0),
+        "complete": bool(raw.get("complete", False)),
         "speed_mps": _optional_num(raw.get("speed_mps", raw.get("speed")), "speed_mps", -1.0, 400.0),
         "bearing": _optional_num(raw.get("bearing", raw.get("heading")), "bearing", 0.0, 360.0),
         "battery": _optional_num(raw.get("battery"), "battery", 0.0, 100.0),
@@ -189,6 +212,8 @@ def _sanitize(raw: Any) -> Dict[str, Any]:
         "altitude_baro": _optional_num(raw.get("altitude_baro"), "altitude_baro", -500.0, 20_000.0),
         "pressure_hpa": _optional_num(raw.get("pressure_hpa"), "pressure_hpa", 300.0, 1200.0),
         "heading_magnetic": _optional_num(raw.get("heading_magnetic"), "heading_magnetic", 0.0, 360.0),
+        "heading_true": _optional_num(raw.get("heading_true"), "heading_true", 0.0, 360.0),
+        "declination_deg": _optional_num(raw.get("declination_deg"), "declination_deg", -90.0, 90.0),
         "movement": _optional_num(raw.get("movement"), "movement", 0.0, 100.0),
         "steps": _optional_int(raw.get("steps"), "steps", 0, 10**9),
         "elapsed_nanos": _optional_int(raw.get("elapsed_nanos"), "elapsed_nanos", 0, 10**15),
@@ -203,6 +228,7 @@ def _sanitize(raw: Any) -> Dict[str, Any]:
         "mock": bool(raw.get("mock", False)),
         "wifi": _sanitize_list(raw.get("wifi"), WIFI_FIELDS),
         "cell": _sanitize_list(raw.get("cell"), CELL_FIELDS),
+        "rtt": _sanitize_list(raw.get("rtt"), RTT_FIELDS, limit=8),
         "gnss": _sanitize_gnss(raw.get("gnss")),
     }
     return point
@@ -335,9 +361,20 @@ def _ingest(point: Dict[str, Any]) -> Dict[str, Any]:
             accuracy = point.get("accuracy")
 
             gap = False
-            if implied > MAX_IMPLIED_SPEED_MPS:
+            # Dos reglas independientes marcan un punto como salto irreal:
+            #   · velocidad crítica  > MAX_IMPLIED_SPEED_MPS (90 m/s = 324 km/h): imposible
+            #     para cualquier vehículo terrestre.
+            #   · teleport: más de MAX_JUMP_M recorridos a más de PLAUSIBLE_SPEED_MPS (216 km/h).
+            #     Atrapa el salto urbano clásico (p. ej. 200 m en 3 s = 67 m/s), que hoy se cuela
+            #     porque su media no llega al umbral de velocidad.
+            # Ambas exigen velocidad irreal a propósito: un trayecto legítimo de 300 m en 10 s
+            # (108 km/h) NO se descarta solo por superar los 150 m de distancia.
+            impossible = implied > MAX_IMPLIED_SPEED_MPS
+            teleport = raw > MAX_JUMP_M and implied > PLAUSIBLE_SPEED_MPS
+            if impossible or teleport:
                 # salto imposible: no contamina el filtro ni las estadísticas
                 point["outlier"] = True
+                point["outlier_reason"] = "speed" if impossible else "jump"
                 point["low_quality"] = True
                 meta["outliers"] += 1
                 meta["low_quality"] += 1
@@ -376,7 +413,11 @@ def _ingest(point: Dict[str, Any]) -> Dict[str, Any]:
 
         # Altitud fusionada: el barómetro es preciso pero relativo; el GPS lo calibra.
         barometric = point.get("altitude_baro")
-        gps_altitude = point.get("altitude")
+        # La altitud MSL (API 34) comparte referencia con la barométrica; se prefiere cuando existe.
+        # Por dispositivo será siempre la misma, así que no se mezclan referencias en una traza.
+        gps_altitude = point.get("altitude_msl")
+        if gps_altitude is None:
+            gps_altitude = point.get("altitude")
         accuracy = point.get("accuracy")
         if barometric is not None and gps_altitude is not None and (accuracy is None or accuracy <= 50.0):
             meta["baro_offset"] = gps_altitude - barometric
@@ -511,10 +552,12 @@ def _int_arg(name: str, default: int, minimum: int, maximum: int) -> int:
 
 
 def _compact_point(point: Dict[str, Any]) -> List[Any]:
-    """Fila compacta [ts, lat, lng, speed, bearing, acc, battery, activity].
+    """Fila compacta [ts, lat, lng, speed, bearing, acc, battery, activity, smooth_lat, smooth_lng].
 
-    Mismo formato que publica la app Android vía Contents API: los lectores toman las
-    6 primeras columnas, así que añadir colas es retrocompatible.
+    Mismo formato que publica la app Android vía Contents API: los dos escriben las 10 columnas,
+    bruta y filtrada (el móvil filtra en el propio dispositivo cuando no hay servidor). Las dos
+    últimas se añadieron al final precisamente para no romper a los lectores que solo miran las 6
+    primeras, y quien las lea debe tolerar que falten en ficheros antiguos.
     """
     return [
         point["timestamp"],
@@ -525,6 +568,8 @@ def _compact_point(point: Dict[str, Any]) -> List[Any]:
         point.get("accuracy"),
         point.get("battery"),
         point.get("activity"),
+        point.get("smooth_lat"),
+        point.get("smooth_lng"),
     ]
 
 
@@ -614,6 +659,13 @@ def health():
             "storage": str(STORE_PATH),
             "auth": bool(API_KEY),
             "max_points_per_device": MAX_POINTS,
+            "filter": {
+                "max_speed_mps": MAX_IMPLIED_SPEED_MPS,
+                "max_jump_m": MAX_JUMP_M,
+                "plausible_speed_mps": PLAUSIBLE_SPEED_MPS,
+                "max_trusted_accuracy_m": MAX_TRUSTED_ACCURACY_M,
+                "max_gap_seconds": MAX_GAP_SECONDS,
+            },
             "github_mirror": github_mirror.status(),
         }
     )
@@ -674,7 +726,13 @@ def publish_snapshot() -> None:
 
     Formato compacto: los puntos viajan como arrays [ts, lat, lng, vel, rumbo, ±], igual que
     publica la app Android, para que el visualizador los lea sin importar quién los escribió.
+
+    Se comprueba el rate limit ANTES de serializar: con GITHUB_REPO definido, montar el snapshot
+    completo de todos los dispositivos en cada POST sería el trabajo más caro de la API para
+    tirarlo a la basura 59 de cada 60 veces.
     """
+    if not github_mirror.is_due():
+        return
     try:
         with _lock:
             snapshot = [_serialize(did, "compact", 0, 0, True) for did in _devices]

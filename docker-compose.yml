@@ -4,6 +4,12 @@ services:
     image: telemetria:latest
     container_name: telemetria
     restart: unless-stopped
+    # tini mínimo (el init del propio Docker) para que el contenedor recoja bien los zombis y
+    # reenvíe SIGTERM: al cerrar, el atexit del backend compacta el JSONL antes de morir.
+    init: true
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "${PORT:-8000}:8000"
     environment:
@@ -11,6 +17,12 @@ services:
       TELEMETRY_API_KEY: "${TELEMETRY_API_KEY:-}"
       TELEMETRY_MAX_POINTS: "${TELEMETRY_MAX_POINTS:-5000}"
       TELEMETRY_COMPACT_EVERY: "${TELEMETRY_COMPACT_EVERY:-2000}"
+      # Filtros de integridad: saltos de más de 150 m a velocidad irreal y fixes peores de 150 m
+      # no contaminan la traza ni suman distancia. Se ven en GET /api/health → filter.
+      TELEMETRY_MAX_JUMP_M: "${TELEMETRY_MAX_JUMP_M:-150}"
+      TELEMETRY_PLAUSIBLE_SPEED: "${TELEMETRY_PLAUSIBLE_SPEED:-60}"
+      TELEMETRY_MAX_SPEED_MPS: "${TELEMETRY_MAX_SPEED_MPS:-90}"
+      TELEMETRY_MAX_ACCURACY_M: "${TELEMETRY_MAX_ACCURACY_M:-150}"
       # Espejo GitHub (opcional): consolida todos los dispositivos en data/latest.json
       # del repo para consumirlo desde GitHub Pages sin exponer la API a Internet.
       # GITHUB_REPO: "usuario/repo" (obligatorio junto con GITHUB_TOKEN para activar)
@@ -19,6 +31,9 @@ services:
       GITHUB_BRANCH: "${GITHUB_BRANCH:-main}"
       GITHUB_PATH: "${GITHUB_PATH:-data/latest.json}"
       GITHUB_MIN_INTERVAL: "${GITHUB_MIN_INTERVAL:-60}"
+    tmpfs:
+      # Nada del servidor necesita escribir fuera de /data; /tmp va a RAM.
+      - /tmp:size=16m,mode=1777
     volumes:
       # El almacén es un JSONL append-only: contiene ubicaciones, trátalo como dato personal.
       - telemetry-data:/data

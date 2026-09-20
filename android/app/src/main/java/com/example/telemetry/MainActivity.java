@@ -5,9 +5,12 @@ import android.app.Activity;
 import android.app.admin.DevicePolicyManager;
 import android.content.ComponentName;
 import android.content.Context;
+import android.app.ActivityManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Insets;
+import android.location.LocationManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -18,6 +21,7 @@ import android.provider.Settings;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
+import android.view.WindowInsets;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -34,6 +38,8 @@ public class MainActivity extends Activity {
     private static final String PREFS = "telemetry_prefs";
     private static final int REQUEST_FOREGROUND = 0x7E1;
     private static final int REQUEST_BACKGROUND = 0x7E3;
+    private static final int REQUEST_PHONE_STATE = 0x7E4;
+    private static final int REQUEST_STORAGE = 0x7E5;
     private static final long REFRESH_MS = 1_000L;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -56,15 +62,31 @@ public class MainActivity extends Activity {
     private EditText ghRepoInput;
     private EditText ghBranchInput;
     private EditText ghPathInput;
+    private EditText gistIdInput;
+    private EditText gistFileInput;
     private TextView statusView;
     private TextView persistenceView;
+    private TextView capabilitiesView;
+    private TextView errorView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        setContentView(buildUi());
+        try {
+            setContentView(buildUi());
+        } catch (Throwable t) {
+            // Una pantalla rota —una preferencia corrupta, un recurso que falta— no puede dejar la app
+            // inservible: se registra el fallo y se muestra una versión mínima que sigue permitiendo
+            // iniciar y detener el rastreo con la configuración ya guardada.
+            ErrorLogger.recordFatal("MainActivity/buildUi", "no se pudo construir la interfaz", t);
+            setContentView(fallbackUi(t));
+        }
         requestForegroundPermissions();
+        // Abrir la app es el único camino que el sistema NO puede bloquear: en primer plano no
+        // aplica la restricción de arranque de servicios desde segundo plano (Android 12+), así que
+        // aquí es donde se reanuda el rastreo que el sistema había rechazado relanzar.
+        resumeTrackingIfEnabled();
         handler.post(refresh);
     }
 
@@ -101,8 +123,10 @@ public class MainActivity extends Activity {
         root.addView(subtitle);
 
         endpointInput = addField(root, "URL del servidor (…/api/location)",
-                prefs.getString("endpoint", "https://mi-servidor.ejemplo.com"), InputType.TYPE_TEXT_VARIATION_URI);
-        apiKeyInput = addField(root, "API Key (opcional)", prefs.getString("api_key", ""), InputType.TYPE_CLASS_TEXT);
+                prefs.getString("endpoint", "https://mi-servidor.ejemplo.com"),
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        apiKeyInput = addField(root, "API Key (opcional)", prefs.getString("api_key", ""),
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         deviceInput = addField(root, "device_id",
                 prefs.getString("device_id", "android-" + Long.toHexString(System.currentTimeMillis())), InputType.TYPE_CLASS_TEXT);
         labelInput = addField(root, "Etiqueta visible", prefs.getString("label", Build.MODEL), InputType.TYPE_CLASS_TEXT);
@@ -122,10 +146,31 @@ public class MainActivity extends Activity {
         ghHint.setTextSize(11f);
         ghHint.setPadding(0, 0, 0, dp(4));
         root.addView(ghHint);
-        ghTokenInput = addField(root, "Token de GitHub (ghp_…)", prefs.getString("gh_token", ""), InputType.TYPE_CLASS_TEXT);
-        ghRepoInput = addField(root, "usuario/repositorio", prefs.getString("gh_repo", ""), InputType.TYPE_TEXT_VARIATION_URI);
+        ghTokenInput = addField(root, "Token de GitHub (ghp_…)", prefs.getString("gh_token", ""),
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        ghRepoInput = addField(root, "usuario/repositorio", prefs.getString("gh_repo", ""),
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         ghBranchInput = addField(root, "Rama (main)", prefs.getString("gh_branch", "main"), InputType.TYPE_CLASS_TEXT);
-        ghPathInput = addField(root, "Ruta del fichero (data/latest.json)", prefs.getString("gh_path", "data/latest.json"), InputType.TYPE_TEXT_VARIATION_URI);
+        ghPathInput = addField(root, "Ruta del fichero (data/latest.json)", prefs.getString("gh_path", "data/latest.json"),
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+
+        TextView gistTitle = new TextView(this);
+        gistTitle.setText("GitHub Gist (base de datos, sin repositorio)");
+        gistTitle.setTextSize(14f);
+        gistTitle.setPadding(0, dp(16), 0, dp(2));
+        root.addView(gistTitle);
+        TextView gistHint = new TextView(this);
+        gistHint.setText("Publica el histórico en un Gist que la web lee del raw_url. Usa el mismo token "
+                + "de arriba: basta con permiso 'Gists: read and write' (o 'Contents' si lo compartes con el "
+                + "canal de repositorio). Deja el ID vacío para desactivar este canal. Antes de cada escritura "
+                + "se lee el Gist y se fusiona por timestamp_ms: nunca se borra el historial de otros equipos.");
+        gistHint.setTextSize(11f);
+        gistHint.setPadding(0, 0, 0, dp(4));
+        root.addView(gistHint);
+        gistIdInput = addField(root, "ID del gist (o su URL completa)", prefs.getString("gist_id", ""),
+                InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        gistFileInput = addField(root, "Fichero dentro del gist (data.json)", prefs.getString("gist_file", "data.json"),
+                InputType.TYPE_CLASS_TEXT);
 
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
@@ -173,6 +218,24 @@ public class MainActivity extends Activity {
                 requestBatteryExemption();
             }
         }));
+        hardening.addView(button("Telefonía", new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                requestPhoneStatePermission();
+            }
+        }));
+        hardening.addView(button("Diagnóstico", new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                exportDiagnostic();
+            }
+        }));
+        hardening.addView(button("Limpiar log", new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                clearErrorLog();
+            }
+        }));
         hardening.addView(button("Ajustes", new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -185,14 +248,123 @@ public class MainActivity extends Activity {
         persistenceView.setTextSize(13f);
         root.addView(persistenceView);
 
+        capabilitiesView = new TextView(this);
+        capabilitiesView.setTextSize(13f);
+        capabilitiesView.setTextIsSelectable(true);   // poder copiar el ID o la URL del gist
+        root.addView(capabilitiesView);
+
+        errorView = new TextView(this);
+        errorView.setTextSize(12f);
+        errorView.setTextIsSelectable(true);
+        root.addView(errorView);
+
         statusView = new TextView(this);
         statusView.setTextSize(13f);
         statusView.setPadding(0, dp(10), 0, 0);
         root.addView(statusView);
 
         ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
         scroll.addView(root);
+        applyWindowInsets(scroll, root);
         return scroll;
+    }
+
+    /**
+     * Android 15 (API 35) dibuja a pantalla completa por defecto para las apps que apuntan a esa
+     * versión: sin esto, el título y los botones quedarían bajo la barra de estado y la de
+     * navegación. El relleno se ajusta a las barras reales del dispositivo (incluido el recorte de
+     * pantalla), así que sigue funcionando en Android 11 y en cualquier relación de aspecto.
+     */
+    private void applyWindowInsets(final ScrollView scroll, final LinearLayout root) {
+        final int base = dp(16);
+        scroll.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+            @Override
+            public WindowInsets onApplyWindowInsets(View view, WindowInsets insets) {
+                int top;
+                int bottom;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    Insets bars = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                    top = bars.top;
+                    bottom = bars.bottom;
+                } else {
+                    top = insets.getSystemWindowInsetTop();
+                    bottom = insets.getSystemWindowInsetBottom();
+                }
+                root.setPadding(base, base + top, base, base + bottom);
+                return insets;
+            }
+        });
+        scroll.requestApplyInsets();
+    }
+
+    /**
+     * Interfaz mínima de emergencia. Sin ella, un fallo al construir la pantalla completa dejaría la
+     * app abierta y muda: aquí al menos se ve el detalle del fallo y se puede arrancar o parar el
+     * rastreo con lo que ya estaba configurado.
+     */
+    private View fallbackUi(Throwable error) {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(16);
+        root.setPadding(pad, pad, pad, pad);
+
+        TextView title = new TextView(this);
+        title.setText("Telemetría · modo de emergencia");
+        title.setTextSize(16f);
+        root.addView(title);
+
+        TextView detail = new TextView(this);
+        detail.setTextSize(12f);
+        detail.setTextIsSelectable(true);
+        detail.setText("La interfaz completa no se ha podido construir, pero el motor de rastreo sigue "
+                + "disponible.\n\nDetalle: " + (error == null ? "desconocido" : String.valueOf(error.getMessage()))
+                + "\n\nEl incidente quedó registrado en Descargas/" + ErrorLogger.folder(this)
+                + "/error.json (y en la copia privada de la app).\n\nReparación posible: borrar los datos "
+                + "de la app o reinstalar el APK; la configuración guardada (endpoint, token, device_id) "
+                + "se conserva en el almacén de preferencias.");
+        detail.setPadding(0, dp(8), 0, dp(8));
+        root.addView(detail);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.addView(button("Iniciar", new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                startTrackingFallback();
+            }
+        }));
+        actions.addView(button("Detener", new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                stopTracking();
+            }
+        }));
+        actions.addView(button("Diagnóstico", new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                exportDiagnostic();
+            }
+        }));
+        root.addView(actions);
+        return root;
+    }
+
+    /**
+     * Inicio en modo de emergencia: usa la configuración ya persistida y no toca ningún campo de la
+     * interfaz (que en este modo no existe).
+     */
+    private void startTrackingFallback() {
+        String endpoint = prefs.getString("endpoint", "");
+        if (endpoint.isEmpty()) {
+            toast("No hay destino configurado: instala una versión sana para configurarlo");
+            return;
+        }
+        Watchdog.setTrackingEnabled(this, true);
+        Watchdog.arm(this);
+        TelemetryWorker.schedulePeriodic(this);
+        LocationTrackerService.start(this);
+        toast("Rastreo iniciado (modo de emergencia)");
     }
 
     private EditText addField(LinearLayout parent, String hint, String value, int inputType) {
@@ -206,7 +378,9 @@ public class MainActivity extends Activity {
         input.setHint(hint);
         input.setText(value);
         input.setSingleLine(true);
-        input.setInputType(inputType | InputType.TYPE_CLASS_TEXT);
+        // El tipo llega completo desde la llamada: mezclar la clase con TYPE_CLASS_TEXT convertía
+        // los campos numéricos (intervalo y distancia) en un teclado de teléfono.
+        input.setInputType(inputType);
         parent.addView(input);
         return input;
     }
@@ -243,13 +417,23 @@ public class MainActivity extends Activity {
                 .apply();
         TelemetryClient.get(this).configure(endpoint, apiKey, deviceId);
         // publicación directa a GitHub: si el token o el repo quedan vacíos se desactiva
+        String token = ghTokenInput.getText().toString().trim();
         GithubPublisher.get(this).configure(
-                ghTokenInput.getText().toString().trim(),
+                token,
                 ghRepoInput.getText().toString().trim(),
                 ghBranchInput.getText().toString().trim(),
                 ghPathInput.getText().toString().trim(),
-                !ghTokenInput.getText().toString().trim().isEmpty()
-                        && !ghRepoInput.getText().toString().trim().isEmpty());
+                !token.isEmpty() && !ghRepoInput.getText().toString().trim().isEmpty());
+        // Canal Gist: se activa solo si hay token y ID. El ID se guarda ya normalizado (acepta la URL).
+        String gistId = gistIdInput.getText().toString().trim();
+        GistPublisher.get(this).configure(token, gistId,
+                gistFileInput.getText().toString().trim(),
+                !token.isEmpty() && !gistId.isEmpty());
+        prefs.edit()
+                .putString("gist_id", GistPublisher.get(this).getGistId())
+                .putString("gist_file", GistPublisher.get(this).getFileName())
+                .apply();
+        gistIdInput.setText(GistPublisher.get(this).getGistId());
         updateStatus();
     }
 
@@ -280,8 +464,29 @@ public class MainActivity extends Activity {
         Watchdog.setTrackingEnabled(this, false);
         Watchdog.cancel(this);
         LocationTrackerService.stop(this);
+        // Al detener, se apaga todo lo periódico y queda un único intento de entrega: los puntos ya
+        // capturados no se pierden, pero no queda nada corriendo indefinidamente.
+        TelemetryWorker.cancelAll(this);
+        TelemetryWorker.scheduleFinalFlush(this);
         toast("Rastreo detenido");
         updateStatus();
+    }
+
+    /**
+     * Reanuda el rastreo que el usuario había dejado activo, si el servicio no está vivo y hay
+     * permiso de ubicación. Se llama al abrir la actividad y cuando se conceden los permisos.
+     */
+    private void resumeTrackingIfEnabled() {
+        if (LocationTrackerService.running || !Watchdog.isTrackingEnabled(this)) {
+            return;
+        }
+        if (!hasForegroundLocation()) {
+            return;   // sin permiso no se puede arrancar en primer plano: lo pide el flujo de permisos
+        }
+        Watchdog.arm(this);
+        TelemetryWorker.schedulePeriodic(this);
+        LocationTrackerService.start(this);
+        toast("Rastreo reanudado");
     }
 
     private void requestDeviceAdmin() {
@@ -328,6 +533,56 @@ public class MainActivity extends Activity {
         }
     }
 
+    /**
+     * Permiso de telefonía bajo petición explícita.
+     *
+     * <p>{@code READ_PHONE_STATE} es peligroso y el código actual no lo necesita para nada: el
+     * enriquecimiento de celdas se apoya en el permiso de ubicación precisa. Se deja declarado y se
+     * ofrece aquí porque hay despliegues gestionados (MDM) que lo preotorgan y amplía el detalle de
+     * telefonía en algunas compilaciones de fabricante, pero nunca se pide sin que el usuario lo
+     * pulse: pedir permisos peligrosos que no se usan es exactamente lo que Play penaliza.</p>
+     */
+    private void requestPhoneStatePermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            toast("Concedido en la instalación");
+            return;
+        }
+        if (checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED) {
+            toast("Telefonía ya concedida");
+            return;
+        }
+        requestPermissions(new String[]{Manifest.permission.READ_PHONE_STATE}, REQUEST_PHONE_STATE);
+    }
+
+    /**
+     * Escribe un diagnóstico completo del sistema y lo deja junto al registro de errores.
+     *
+     * <p>En Android 9 y anteriores la carpeta pública de Descargas necesita permiso de almacenamiento.
+     * Ese permiso ya se pide al arrancar (para que el registro llegue a Descargas desde el primer
+     * fallo), pero si en su momento se denegó, este botón lo vuelve a solicitar: pedirlo justo cuando
+     * el usuario demuestra que quiere el fichero es cuando tiene sentido, y no hay ningún otro momento
+     * mejor para insistir.</p>
+     */
+    private void exportDiagnostic() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+                && checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_STORAGE);
+            toast("Concede el permiso y se escribirá el diagnóstico");
+            return;
+        }
+        String path = ErrorLogger.writeDiagnostic(this);
+        toast(path == null || path.isEmpty()
+                ? "No se pudo escribir el diagnóstico"
+                : "Diagnóstico en " + path);
+        updateStatus();
+    }
+
+    private void clearErrorLog() {
+        boolean ok = ErrorLogger.clear(this);
+        toast(ok ? "Registro de errores vaciado" : "No se pudo vaciar el registro");
+        updateStatus();
+    }
+
     private void openAppSettings() {
         try {
             Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
@@ -341,6 +596,9 @@ public class MainActivity extends Activity {
     /* ------------------------------------------------------------------ estado */
 
     private void updateStatus() {
+        if (statusView == null || persistenceView == null || capabilitiesView == null || errorView == null) {
+            return;   // modo de emergencia: la pantalla completa no llegó a construirse
+        }
         TelemetryClient client = TelemetryClient.get(this);
         String endpoint = client.getEndpoint();
         statusView.setText(
@@ -357,17 +615,82 @@ public class MainActivity extends Activity {
                             ? GithubPublisher.lastStatus + (GithubPublisher.lastOkAt > 0
                                 ? " (" + fmtAgo(GithubPublisher.lastOkAt) + ", " + GithubPublisher.publishedCount + " pubs.)"
                                 : "")
-                            : "desactivado (sin token/repo)"));
+                            : "desactivado (sin token/repo)")
+                        + "\nGist: " + (GistPublisher.get(this).isConfigured()
+                            ? GistPublisher.lastStatus + (GistPublisher.lastOkAt > 0
+                                ? " (" + fmtAgo(GistPublisher.lastOkAt) + ")" : "")
+                                + " · pendientes " + GistPublisher.get(this).pendingLocal()
+                                + " · local " + GistPublisher.get(this).localStored()
+                                + " · último envío " + GistPublisher.lastPublished
+                            : "desactivado (sin token o sin ID de gist)")
+                        + "\nWorkManager (gist): " + TelemetryWorker.lastGist);
 
         persistenceView.setText(
                 "\nPERSISTENCIA"
                         + "\nadministrador: " + yesNo(TelemetryAdminReceiver.isActive(this))
-                        + "\naccesibilidad: " + yesNo(TelemetryAccessibilityService.isConnected())
+                        + "\naccesibilidad: " + yesNo(TelemetryAccessibilityService.isConnected()
+                            || TelemetryAccessibilityService.isEnabledInSystem(this))
                         + "\nbatería sin restricciones: " + yesNo(isIgnoringBatteryOptimizations())
                         + "\nubicación en segundo plano: " + yesNo(hasBackgroundLocation())
                         + "\nWi-Fi (NEARBY_WIFI_DEVICES): " + yesNo(hasPermission(Manifest.permission.NEARBY_WIFI_DEVICES, Build.VERSION_CODES.TIRAMISU))
                         + "\nactividad/podómetro: " + yesNo(hasPermission(Manifest.permission.ACTIVITY_RECOGNITION, Build.VERSION_CODES.Q))
-                        + "\nrelanzados por el watchdog: " + Watchdog.restarts(this));
+                        + "\nrelanzados por el watchdog: " + Watchdog.restarts(this)
+                        + "\nrelanzados rechazados: " + Watchdog.launchAttempts(this)
+                        + "\nWorkManager: " + TelemetryWorker.lastRun);
+
+        capabilitiesView.setText(
+                "\nCAPACIDADES DEL DISPOSITIVO"
+                        + "\nAndroid " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")"
+                        + "\nrecursos: " + (isLowRamDevice() ? "bajos (Go Edition / 1 GB): modo ahorro" : "normales: modo completo")
+                        + "\nubicación del sistema: " + yesNo(locationEnabled())
+                        + "\nGPS: " + yesNo(providerEnabled(LocationManager.GPS_PROVIDER))
+                        + "\nred (Wi-Fi/celda): " + yesNo(providerEnabled(LocationManager.NETWORK_PROVIDER))
+                        + "\nPlay Services (motor fusionado): " + (FusedLocationBridge.isAvailable(this)
+                            ? "disponible" : "no disponible (se usa el motor del sistema)")
+                        + "\nWi-Fi RTT 802.11mc: " + (WifiRttRanger.isSupported(this) ? "soportado" : "no soportado")
+                        + "\nceldas/telefonía: " + (hasPermission(Manifest.permission.READ_PHONE_STATE, Build.VERSION_CODES.M)
+                            ? "concedido" : "opcional (botón Telefonía)")
+                        + "\nGist raw (pegar en el visor): " + (GistPublisher.get(this).getRawUrl().isEmpty()
+                            ? "(sin ID configurado)" : GistPublisher.get(this).getRawUrl())
+                        + "\nGist ID: " + (GistPublisher.get(this).getGistId().isEmpty()
+                            ? "(vacío: canal desactivado)" : GistPublisher.get(this).getGistId()));
+
+        errorView.setText("\nREGISTRO DE ERRORES (" + ErrorLogger.folder(this) + "/error.json)\n  "
+                + ErrorLogger.summary());
+    }
+
+    private boolean isLowRamDevice() {
+        try {
+            ActivityManager manager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+            return manager != null && manager.isLowRamDevice();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean locationEnabled() {
+        try {
+            LocationManager manager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+            if (manager == null) {
+                return false;
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                return manager.isLocationEnabled();
+            }
+            return manager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+                    || manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean providerEnabled(String provider) {
+        try {
+            LocationManager manager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+            return manager != null && manager.isProviderEnabled(provider);
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private boolean isIgnoringBatteryOptimizations() {
@@ -390,10 +713,20 @@ public class MainActivity extends Activity {
             return;
         }
         List<String> missing = new ArrayList<>();
-        for (String permission : new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}) {
+        // Solo los permisos que el código usa de verdad. READ_PHONE_STATE es peligroso y ninguna
+        // llamada actual lo necesita (el enriquecimiento de celdas vive del permiso de ubicación),
+        // así que no se pide en silencio: está declarado y se solicita con el botón "Telefonía".
+        for (String permission : new String[]{Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION}) {
             if (checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) {
                 missing.add(permission);
             }
+        }
+        // Android 9 y anteriores: la carpeta pública de Descargas (donde se deja error.json) necesita
+        // este permiso. En Android 10+ se escribe por MediaStore y no se pide nada.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+                && checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            missing.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
         }
         // API 29+: el podómetro y la clasificación de actividad lo exigen
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
@@ -450,7 +783,26 @@ public class MainActivity extends Activity {
             updateStatus();
             if (hasForegroundLocation() && needsBackgroundLocation()) {
                 requestBackgroundLocation();
+            } else {
+                resumeTrackingIfEnabled();
             }
+        } else if (requestCode == REQUEST_STORAGE) {
+            // Permiso de almacenamiento para la carpeta pública en Android 9 y anteriores: si se
+            // concedió, se escribe ya el diagnóstico que el usuario había pedido.
+            updateStatus();
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+                    && checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
+                exportDiagnostic();
+            }
+        } else if (requestCode == REQUEST_PHONE_STATE) {
+            boolean granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.M
+                    || checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED;
+            if (granted) {
+                // Fuerza a releer Wi-Fi, celdas y telefonía en el siguiente punto sin esperar al TTL.
+                LocationTrackerService.requestEnrichmentRefresh(this);
+                toast("Telefonía concedida: se aplica en el próximo punto");
+            }
+            updateStatus();
         } else if (requestCode == REQUEST_BACKGROUND) {
             updateStatus();
             if (hasBackgroundLocation()) {

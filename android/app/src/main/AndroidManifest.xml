@@ -32,14 +32,29 @@
     <!-- Sensores: podómetro y clasificación de actividad (API 29+) -->
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
 
+    <!-- Registro de errores en la carpeta pública de Descargas. En Android 10+ se escribe vía
+         MediaStore y NO hace falta permiso; solo en Android 9 y anteriores se necesita este permiso,
+         por eso se declara acotado a esas versiones (maxSdkVersion) y se pide en tiempo de ejecución
+         únicamente allí. Si no se concede, el registro se guarda en la carpeta propia de la app. -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+    <uses-feature android:name="android.hardware.location.network" android:required="false" />
     <uses-feature android:name="android.hardware.wifi" android:required="false" />
+    <!-- Sensores opcionales: el rumbo (magnetómetro + gravedad) y la clasificación de actividad
+         (acelerómetro) se aprovechan si el dispositivo los tiene y se degradan con gracia si no. -->
+    <uses-feature android:name="android.hardware.sensor.compass" android:required="false" />
+    <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="false" />
     <uses-feature android:name="android.hardware.sensor.barometer" android:required="false" />
     <uses-feature android:name="android.hardware.sensor.stepcounter" android:required="false" />
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
 
     <application
+        android:name=".TelemetryApp"
         android:allowBackup="false"
+        android:fullBackupContent="false"
         android:icon="@drawable/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
@@ -48,7 +63,9 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:screenOrientation="portrait">
+            android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize"
+            android:enableOnBackInvokedCallback="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

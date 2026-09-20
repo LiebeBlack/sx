@@ -7,6 +7,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -18,6 +19,8 @@ import org.json.JSONObject;
 public class GnssMonitor extends GnssStatus.Callback {
 
     private static final String TAG = "GnssMonitor";
+    /** Tope de satélites que viajan en cada punto: acota el payload sin perder lo relevante. */
+    private static final int MAX_SATELLITES = 16;
 
     private final Context context;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -27,11 +30,18 @@ public class GnssMonitor extends GnssStatus.Callback {
     private volatile double snrBest = 0.0;
     private volatile double snrAvg = 0.0;
     private volatile String constellations = "";
+    private volatile JSONArray satellites = new JSONArray();
+    private volatile int maxSatellites = MAX_SATELLITES;
     private volatile long lastUpdate = 0L;
     private volatile boolean registered = false;
 
     public GnssMonitor(Context context) {
         this.context = context.getApplicationContext();
+    }
+
+    /** En Android Go se envía menos detalle por satélite: mismo dato útil, menos payload. */
+    public void setLowRam(boolean lowRam) {
+        this.maxSatellites = lowRam ? 6 : MAX_SATELLITES;
     }
 
     public void start() {
@@ -72,10 +82,15 @@ public class GnssMonitor extends GnssStatus.Callback {
         double snrSum = 0.0;
         double best = 0.0;
         StringBuilder types = new StringBuilder();
+        // Detalle por satélite: permite saber si el fix es multi-constelación y con qué calidad
+        // real, y auditar por qué una posición salió con error. Se envían los que aportan algo.
+        JSONArray sats = new JSONArray();
 
         for (int i = 0; i < count; i++) {
             double snr = status.getSnr(i);
-            if (status.usedInFix(i)) {
+            boolean usedInFix = status.usedInFix(i);
+            String name = constellationName(status.getConstellationType(i));
+            if (usedInFix) {
                 used++;
             }
             if (snr > 0.0) {
@@ -86,15 +101,33 @@ public class GnssMonitor extends GnssStatus.Callback {
                     best = snr;
                 }
             }
-            String name = constellationName(status.getConstellationType(i));
             if (types.indexOf(name) < 0) {
                 if (types.length() > 0) {
                     types.append(',');
                 }
                 types.append(name);
             }
+            if (sats.length() < maxSatellites && (snr > 0.0 || usedInFix)) {
+                try {
+                    JSONObject sat = new JSONObject();
+                    sat.put("sys", name);
+                    sat.put("svid", status.getSvid(i));
+                    sat.put("cn0", round(snr));
+                    sat.put("used", usedInFix);
+                    if (status.hasElevation(i)) {
+                        sat.put("elev", Math.round(status.getElevation(i)));
+                    }
+                    if (status.hasAzimuth(i)) {
+                        sat.put("azim", Math.round(status.getAzimuth(i)));
+                    }
+                    sats.put(sat);
+                } catch (JSONException e) {
+                    // el detalle de satélites es un extra: nunca debe romper la captura
+                }
+            }
         }
 
+        satellites = sats;
         visible = withSignal;
         usedInFix = used;
         snrBest = best;
@@ -122,6 +155,10 @@ public class GnssMonitor extends GnssStatus.Callback {
         gnss.put("snr_avg", round(snrAvg));
         if (constellations.length() > 0) {
             gnss.put("constellations", constellations);
+        }
+        JSONArray sats = satellites;
+        if (sats.length() > 0) {
+            gnss.put("sats", sats);
         }
         point.put("gnss", gnss);
     }

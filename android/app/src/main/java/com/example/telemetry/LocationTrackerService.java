@@ -1,6 +1,7 @@
 package com.example.telemetry;
 
 import android.Manifest;
+import android.app.ActivityManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -10,10 +11,13 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
+import android.hardware.GeomagneticField;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.location.LocationRequest;
 import android.net.ConnectivityManager;
+import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkInfo;
 import android.net.TransportInfo;
@@ -28,6 +32,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
+import android.os.SystemClock;
 import android.telephony.CellIdentityGsm;
 import android.telephony.CellIdentityLte;
 import android.telephony.CellIdentityWcdma;
@@ -79,6 +84,12 @@ public class LocationTrackerService extends Service implements LocationListener 
     private static final long ENRICHMENT_TTL_MS = 30_000L;
     private static final long FRESH_FIX_AFTER_MS = 120_000L;
     private static final float ACCURACY_IMPROVEMENT_M = 8f;
+    private static final long DEDUPE_WINDOW_MS = 1_500L;      // dos fixes del mismo instante
+    private static final long RTT_TTL_MS = 60_000L;           // mínimo entre mediciones RTT
+    private static final long RTT_STALE_MS = 90_000L;         // caducidad de una medida RTT
+    private static final float RTT_TRIGGER_ACCURACY_M = 25f;  // solo cuando el GPS no va fino
+    private static final int MAX_WIFI = 16;                   // puntos de acceso por punto enviado
+    private static final int MAX_WIFI_LOW_RAM = 6;
 
     /** Estado observable desde la UI sin binder ni broadcasts. */
     public static volatile boolean running = false;
@@ -97,9 +108,16 @@ public class LocationTrackerService extends Service implements LocationListener 
             acquireWakeLock();
             Watchdog.beat(LocationTrackerService.this);
             Watchdog.arm(LocationTrackerService.this);
+            // La cola no debe esperar a un fix nuevo para vaciarse: si hay puntos pendientes (por
+            // ejemplo, se recuperó la cobertura estando quieto), se intenta ya.
+            if (client != null && client.queued() > 0) {
+                client.flushAsync();
+            }
             sendHeartbeat();
             // reengancha la publicación a GitHub si un ciclo se perdió en Doze
             GithubPublisher.get(LocationTrackerService.this).publishAsync();
+            // y el canal Gist: reintenta con todo el histórico local pendiente, no solo con el último punto
+            GistPublisher.get(LocationTrackerService.this).publishAsync();
             handler.postDelayed(this, HEARTBEAT_MS);
         }
     };
@@ -109,6 +127,10 @@ public class LocationTrackerService extends Service implements LocationListener 
     private GithubPublisher publisher;
     private SensorFusion sensorFusion;
     private GnssMonitor gnssMonitor;
+    private final TrackFilter trackFilter = new TrackFilter();
+    private FusedLocationBridge fusedBridge;
+    private GistPublisher gistPublisher;
+    private ConnectivityManager.NetworkCallback networkCallback;
     private PowerManager.WakeLock wakeLock;
     private CancellationSignal cancellationSignal;
     private ExecutorService freshFixExecutor;
@@ -118,11 +140,23 @@ public class LocationTrackerService extends Service implements LocationListener 
     private float minDistanceM = 5f;
     private long lastSentAt = 0L;
     private long lastNotifyAt = 0L;
+    private long lastSentMonotonicMs = 0L;
+    private float lastSentAccuracy = -1f;
+    private long lastRttRequestAt = 0L;
+    private Boolean rttSupported;   // se consulta una sola vez: la capacidad no cambia en caliente
+    private long rttAt = 0L;
+    private volatile JSONArray cachedRtt = new JSONArray();
     private Location lastSentLocation;
     private boolean tracking = false;
     private boolean foregroundOk = false;
 
+    private static volatile boolean enrichmentDirty = false;
     private long enrichmentAt = 0L;
+    private long lastFreshFixAt = 0L;
+    private long enrichmentTtlMs = ENRICHMENT_TTL_MS;
+    /** Android Go / dispositivos de 1 GB: menos trabajo por punto, mismo dato útil. */
+    private boolean lowRam = false;
+    private int wifiLimit = MAX_WIFI;
     private JSONArray cachedWifi = new JSONArray();
     private JSONArray cachedCells = new JSONArray();
     private int cachedBattery = -1;
@@ -163,7 +197,8 @@ public class LocationTrackerService extends Service implements LocationListener 
                     failedCount++;
                 }
                 droppedCount = lost;
-                lastSummary = "http=" + httpCode + " enviados=" + sentCount + " cola=" + queued;
+                String estado = httpCode < 0 ? (httpCode == -3 ? "sin red" : "sin conexión") : ("http=" + httpCode);
+                lastSummary = estado + " enviados=" + sentCount + " cola=" + queued;
                 updateNotification(lastSummary);
             }
         });
@@ -176,30 +211,68 @@ public class LocationTrackerService extends Service implements LocationListener 
                 return thread;
             }
         });
+        lowRam = isLowRamDevice();
+        if (lowRam) {
+            // En Android Go el enriquecimiento (Wi-Fi, celdas, sensores) se espacia y se recorta: es
+            // lo que evita que el proceso muera por presión de memoria en un dispositivo de 1 GB.
+            enrichmentTtlMs = ENRICHMENT_TTL_MS * 2L;
+            wifiLimit = MAX_WIFI_LOW_RAM;
+        }
         sensorFusion = new SensorFusion(this);
         gnssMonitor = new GnssMonitor(this);
+        gnssMonitor.setLowRam(lowRam);
         publisher = GithubPublisher.get(this);
+        gistPublisher = GistPublisher.get(this);
+        fusedBridge = new FusedLocationBridge(this, new FusedLocationBridge.Listener() {
+            @Override
+            public void onLocation(Location location, String source) {
+                send(location, source, false);
+            }
+        });
         locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
 
         createChannel();
         startAsForeground();
         acquireWakeLock();
+        watchNetworks();
         Watchdog.arm(this);
+        // WorkManager como segunda vía de persistencia (idempotente: conserva el trabajo si existe).
+        TelemetryWorker.schedulePeriodic(this);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (client.getEndpoint().isEmpty()) {
+            // Fallo determinista de configuración: autorizar al watchdog aquí significaría relanzar
+            // el servicio cada 15 minutos durante toda la vida del teléfono sin poder enviar nada.
             lastSummary = "endpoint vacío: configura la URL en la app";
             updateNotification(lastSummary);
+            Watchdog.setTrackingEnabled(this, false);
+            Watchdog.cancel(this);
             stopSelf();
             return START_NOT_STICKY;
         }
+        // Nota: si falla startForeground (permiso o restricción del sistema) NO se desactiva el
+        // rastreo. Ese fallo es transitorio y ahí es donde el watchdog + START_STICKY recuperan el
+        // servicio; desactivarlo enterraría el mecanismo de persistencia.
         if (!foregroundOk) {
-            // API 34 exige el permiso de ubicación para arrancar con tipo 'location'
-            lastSummary = "sin permiso de ubicación: no se puede rastrear";
+            // API 34+ exige el permiso de ubicación en uso para arrancar con tipo 'location'.
+            if (!granted(Manifest.permission.ACCESS_FINE_LOCATION) && !granted(Manifest.permission.ACCESS_COARSE_LOCATION)) {
+                // Fallo determinista: sin permiso no hay nada que rastrear y autorizar al watchdog
+                // significaría relanzar un servicio incapaz de arrancar durante toda la vida del
+                // teléfono. Al conceder el permiso, la actividad vuelve a activar el rastreo.
+                lastSummary = "sin permiso de ubicación: concédelo en la app";
+                updateNotification(lastSummary);
+                Watchdog.setTrackingEnabled(this, false);
+                Watchdog.cancel(this);
+                stopSelf();
+                return START_NOT_STICKY;
+            }
+            // Cualquier otro fallo (restricción del fabricante, permiso revocado a media ejecución)
+            // es transitorio: el watchdog y START_STICKY son los que recuperan el servicio.
+            lastSummary = "primer plano bloqueado: reintentando";
             stopSelf();
-            return START_NOT_STICKY;
+            return START_STICKY;
         }
         startTracking();
         running = true;
@@ -244,6 +317,20 @@ public class LocationTrackerService extends Service implements LocationListener 
         }
         if (gnssMonitor != null) {
             gnssMonitor.stop();
+        }
+        if (fusedBridge != null) {
+            fusedBridge.stop();
+        }
+        if (networkCallback != null) {
+            try {
+                ConnectivityManager manager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+                if (manager != null) {
+                    manager.unregisterNetworkCallback(networkCallback);
+                }
+            } catch (Exception ignored) {
+                // ya desregistrado, o el proceso se está cerrando: no hay nada que hacer
+            }
+            networkCallback = null;
         }
         if (freshFixExecutor != null) {
             freshFixExecutor.shutdownNow();
@@ -293,22 +380,67 @@ public class LocationTrackerService extends Service implements LocationListener 
         if (best != null) {
             send(best, best.getProvider() + "/last", true);
         }
+        // Motor fusionado de Google si el dispositivo lo tiene: en Android 11 y anteriores es la
+        // única forma de pedir alta precisión con espera a un fix bueno (el framework lo añadió en 12).
+        if (fusedBridge != null && fusedBridge.start(minTimeMs, minDistanceM)) {
+            Log.i(TAG, "puente al motor fusionado de Google activo");
+        }
         requestFreshFixes();
     }
 
     private void registerProvider(String provider) {
         try {
-            if (locationManager.getAllProviders().contains(provider)) {
-                locationManager.requestLocationUpdates(provider, minTimeMs, minDistanceM, this, Looper.getMainLooper());
-                Location last = locationManager.getLastKnownLocation(provider);
-                if (last != null) {
-                    send(last, provider + "/last", true);
-                }
-                Log.i(TAG, "proveedor activo: " + provider);
+            if (!locationManager.getAllProviders().contains(provider)) {
+                return;
             }
+            if (isFused(provider)) {
+                registerAccurateFused();
+            } else {
+                locationManager.requestLocationUpdates(provider, minTimeMs, minDistanceM, this, Looper.getMainLooper());
+            }
+            Location last = locationManager.getLastKnownLocation(provider);
+            if (last != null) {
+                send(last, provider + "/last", true);
+            }
+            Log.i(TAG, "proveedor activo: " + provider);
         } catch (Exception e) {
             // proveedor ausente, deshabilitado o sin permisos: no debe tumbar el servicio
             Log.w(TAG, "proveedor no disponible (" + provider + "): " + e.getMessage());
+        }
+    }
+
+    private static boolean isFused(String provider) {
+        return FUSED_PROVIDER.equals(provider);
+    }
+
+    /**
+     * Motor de ubicación de alta precisión (Android 12+).
+     *
+     * <p>Es la diferencia entre «hay una posición» y «la posición es buena»: se pide calidad
+     * {@code QUALITY_HIGH_ACCURACY}, con réplica rápida entre fixes y
+     * {@code setWaitForAccurateLocation(true)}, que hace esperar al motor fusionado hasta tener una
+     * medida realmente precisa en vez de entregar el primer fix mediocre que encuentre. Es lo que
+     * evita los puntos de ±300 m que arruinan una traza urbana.</p>
+     */
+    private void registerAccurateFused() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                LocationRequest request = new LocationRequest.Builder(LocationRequest.QUALITY_HIGH_ACCURACY, minTimeMs)
+                        .setMinUpdateIntervalMillis(Math.max(1_000L, minTimeMs / 2L))
+                        .setMinUpdateDistanceMeters(Math.max(0f, minDistanceM / 2f))
+                        .setWaitForAccurateLocation(true)
+                        .build();
+                locationManager.requestLocationUpdates(request, getMainExecutor(), this);
+                Log.i(TAG, "fused de alta precisión activo");
+                return;
+            } catch (Exception e) {
+                Log.w(TAG, "alta precisión no disponible: " + e.getMessage());
+            }
+        }
+        try {
+            locationManager.requestLocationUpdates(FUSED_PROVIDER, minTimeMs, minDistanceM, this, Looper.getMainLooper());
+        } catch (Exception e) {
+            Log.w(TAG, "proveedor fusionado no disponible: " + e.getMessage());
         }
     }
 
@@ -320,8 +452,14 @@ public class LocationTrackerService extends Service implements LocationListener 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || locationManager == null) {
             return;
         }
+        lastFreshFixAt = System.currentTimeMillis();
         if (cancellationSignal == null) {
             cancellationSignal = new CancellationSignal();
+        }
+        // Android 12+ sabe esperar a un fix realmente preciso: mejor una sola petición al motor
+        // fusionado que tres concurrentes devolviendo el mismo punto por duplicado.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && requestAccurateCurrentFix()) {
+            return;
         }
         for (String provider : new String[]{LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, FUSED_PROVIDER}) {
             try {
@@ -340,6 +478,33 @@ public class LocationTrackerService extends Service implements LocationListener 
             } catch (Exception e) {
                 Log.w(TAG, "fix inmediato no disponible (" + provider + "): " + e.getMessage());
             }
+        }
+    }
+
+    /**
+     * Pide un único fix de alta precisión y espera a que sea bueno (hasta 20 s de margen, con caché
+     * de hasta 30 s). Devuelve {@code false} si el dispositivo no lo soporta, para poder caer al
+     * método clásico por proveedor.
+     */
+    private boolean requestAccurateCurrentFix() {
+        try {
+            LocationRequest request = new LocationRequest.Builder(LocationRequest.QUALITY_HIGH_ACCURACY, 5_000L)
+                    .setDurationMillis(20_000L)
+                    .setMaxUpdateAgeMillis(30_000L)
+                    .setWaitForAccurateLocation(true)
+                    .build();
+            locationManager.getCurrentLocation(request, cancellationSignal, freshFixExecutor, new Consumer<Location>() {
+                @Override
+                public void accept(Location location) {
+                    if (location != null) {
+                        send(location, location.getProvider() + "/current", false);
+                    }
+                }
+            });
+            return true;
+        } catch (Exception e) {
+            Log.w(TAG, "fix inmediato de alta precisión no disponible: " + e.getMessage());
+            return false;
         }
     }
 
@@ -364,6 +529,13 @@ public class LocationTrackerService extends Service implements LocationListener 
     private void sendHeartbeat() {
         Location best = bestLastKnown();
         if (best == null) {
+            // Sin ningún fix conocido (arranque reciente, GPS dormido) se pide uno inmediato, como
+            // mucho cada FRESH_FIX_AFTER_MS, en lugar de esperar pasivamente al proveedor.
+            if (System.currentTimeMillis() - lastFreshFixAt > FRESH_FIX_AFTER_MS) {
+                requestFreshFixes();
+            }
+            // Sin posición es justo el caso en el que una distancia de interiores aporta algo.
+            maybeRange(-1f);
             lastSummary = "sin fixes disponibles · cola=" + client.queued();
             updateNotification(lastSummary);
             return;
@@ -384,7 +556,15 @@ public class LocationTrackerService extends Service implements LocationListener 
      * Filtro anti-ruido: envío si ha pasado el tiempo mínimo, si hay desplazamiento relevante
      * o si la precisión ha mejorado de forma clara en el mismo sitio.
      */
-    private void send(Location location, String provider, boolean force) {
+    /**
+     * Envía un punto si supera el filtro anti-ruido.
+     *
+     * <p>{@code synchronized} porque conviven dos fuentes de llamada —los callbacks de los
+     * proveedores (hilo principal) y los fixes inmediatos (hilo de I/O)— y ambas comparten el
+     * estado del filtro: sin esto, dos hilos podían pasar a la vez el control de tiempo/distancia
+     * y enviar el mismo movimiento por duplicado.</p>
+     */
+    private synchronized void send(Location location, String provider, boolean force) {
         if (location == null) {
             return;
         }
@@ -400,18 +580,40 @@ public class LocationTrackerService extends Service implements LocationListener 
                 return;
             }
         }
+        // Dos proveedores entregan el mismo instante con precisiones distintas (p. ej. red y
+        // fusionado): quedarse con el peor sería ensuciar la traza con un dato que ya se tenía mejor.
+        long monotonicMs = location.getElapsedRealtimeNanos() / 1_000_000L;
+        if (!force && lastSentMonotonicMs > 0L && monotonicMs > 0L
+                && Math.abs(monotonicMs - lastSentMonotonicMs) < DEDUPE_WINDOW_MS
+                && lastSentAccuracy > 0f && location.hasAccuracy()
+                && location.getAccuracy() >= lastSentAccuracy) {
+            return;
+        }
         JSONObject point = buildPoint(location, provider, force);
         if (point == null) {
             return;
         }
         lastSentAt = now;
         lastSentLocation = location;
+        lastSentMonotonicMs = monotonicMs;
+        lastSentAccuracy = location.hasAccuracy() ? location.getAccuracy() : -1f;
+        maybeRange(lastSentAccuracy);
         Watchdog.beat(this);
         notifyProgress(point);
         client.send(point);
         // difusión directa a GitHub (opcional): funciona incluso sin servidor propio
         if (publisher != null) {
             publisher.enqueue(point);
+        }
+        // Canal Gist: el punto se guarda en el histórico local (SQLite) antes de intentar publicarlo,
+        // así que un fallo de red, un token caducado o un proceso muerto no pierden nada: el envío
+        // masivo del siguiente ciclo manda todo lo pendiente. Todo el trabajo ocurre en el hilo del
+        // publicador, porque este método corre en el hilo principal y aquí no se toca el disco.
+        if (gistPublisher != null) {
+            JSONObject gistPoint = GistPublisher.toGistPoint(this, point);
+            if (gistPoint != null) {
+                gistPublisher.record(gistPoint);
+            }
         }
     }
 
@@ -433,10 +635,25 @@ public class LocationTrackerService extends Service implements LocationListener 
 
     /* ------------------------------------------------------------------ enriquecimiento */
 
+    /**
+     * Fuerza que el siguiente punto relea Wi-Fi, celdas y telefonía, sin esperar al TTL.
+     *
+     * <p>Se usa cuando el usuario concede un permiso opcional desde la app (telefonía, por ejemplo):
+     * sin esto, el enriquecimiento ya cacheado seguiría sin aprovecharlo hasta medio minuto después.
+     * Es estático a propósito: lo llama la actividad, que no tiene referencia al servicio.</p>
+     */
+    public static void requestEnrichmentRefresh(Context context) {
+        enrichmentDirty = true;
+    }
+
     /** Refresca Wi-Fi, celdas, batería y red cada {@link #ENRICHMENT_TTL_MS} milisegundos. */
     private void refreshEnrichment() {
         long now = System.currentTimeMillis();
-        if (enrichmentAt != 0L && (now - enrichmentAt) < ENRICHMENT_TTL_MS) {
+        if (enrichmentDirty) {
+            enrichmentDirty = false;
+            enrichmentAt = 0L;
+        }
+        if (enrichmentAt != 0L && (now - enrichmentAt) < enrichmentTtlMs) {
             return;
         }
         enrichmentAt = now;
@@ -462,6 +679,10 @@ public class LocationTrackerService extends Service implements LocationListener 
             point.put("source", cached ? "android/cached" : "android");
             point.put("model", Build.MANUFACTURER + " " + Build.MODEL);
             point.put("sdk", Build.VERSION.SDK_INT);
+            if (lowRam) {
+                // Quien lea la traza debe saber que este dispositivo va recortado a propósito.
+                point.put("low_ram", true);
+            }
 
             if (location.hasAccuracy()) {
                 point.put("accuracy", location.getAccuracy());
@@ -493,6 +714,20 @@ public class LocationTrackerService extends Service implements LocationListener 
             } else if (location.isFromMockProvider()) {
                 point.put("mock", true);
             }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // isComplete() (API 30) dice si el fix trae todos los campos: señal de calidad.
+                point.put("complete", location.isComplete());
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                // API 34: altitud sobre el nivel del mar (geoidal) en vez de la elipsoidal, con su
+                // propia precisión. Es otra referencia y mejor para trazas terrestres.
+                if (location.hasMslAltitude()) {
+                    point.put("altitude_msl", location.getMslAltitudeMeters());
+                }
+                if (location.hasMslAltitudeAccuracy()) {
+                    point.put("altitude_msl_accuracy", location.getMslAltitudeAccuracyMeters());
+                }
+            }
 
             if (cachedBattery > 0 && cachedBattery <= 100) {
                 point.put("battery", cachedBattery);
@@ -512,16 +747,73 @@ public class LocationTrackerService extends Service implements LocationListener 
             if (cachedCells.length() > 0) {
                 point.put("cell", cachedCells);
             }
+            JSONArray rtt = cachedRtt;
+            if (rtt.length() > 0 && (System.currentTimeMillis() - rttAt) < RTT_STALE_MS) {
+                point.put("rtt", rtt);
+            }
             if (gnssMonitor != null) {
                 gnssMonitor.enrich(point);
             }
             if (sensorFusion != null) {
                 sensorFusion.enrich(point);
             }
+            applyPositionFilter(point, location);
+            enrichTrueHeading(point, location);
             return point;
         } catch (JSONException e) {
             Log.e(TAG, "no se pudo serializar el punto", e);
             return null;
+        }
+    }
+
+    /**
+     * Añade la posición filtrada —y la velocidad estimada si el proveedor no la da— al punto.
+     *
+     * <p>El paso de tiempo usa el reloj monotónico del fix: con la hora de pared, un cambio de hora
+     * del teléfono metería un salto enorme en el filtro y lo desestabilizaría.</p>
+     */
+    private void applyPositionFilter(JSONObject point, Location location) {
+        long monotonicMs = location.getElapsedRealtimeNanos() / 1_000_000L;
+        if (monotonicMs <= 0L) {
+            monotonicMs = SystemClock.elapsedRealtime();
+        }
+        double accuracy = location.hasAccuracy() ? location.getAccuracy() : -1.0;
+        TrackFilter.Result filtered = trackFilter.update(
+                location.getLatitude(), location.getLongitude(), monotonicMs, accuracy);
+        try {
+            point.put("smooth_lat", Math.round(filtered.lat * 10_000_000.0) / 10_000_000.0);
+            point.put("smooth_lng", Math.round(filtered.lng * 10_000_000.0) / 10_000_000.0);
+            if (!location.hasSpeed() && filtered.speedMps > 0.1) {
+                point.put("speed_mps", Math.round(filtered.speedMps * 1_000.0) / 1_000.0);
+            }
+        } catch (JSONException e) {
+            Log.w(TAG, "no se pudo añadir la posición filtrada: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Rumbo al norte verdadero.
+     *
+     * <p>La brújula da el norte magnético, que está desviado del geográfico (unos 2° en la península
+     * ibérica, más de 20° en otras latitudes). Para que el rumbo sirva para navegar se corrige con
+     * la declinación del modelo geomagnético en la posición actual; se publican las dos versiones
+     * para no perder información.</p>
+     */
+    private void enrichTrueHeading(JSONObject point, Location location) {
+        double magnetic = point.optDouble("heading_magnetic", Double.NaN);
+        if (Double.isNaN(magnetic)) {
+            return;
+        }
+        try {
+            double altitude = location.hasAltitude() ? location.getAltitude() : 0.0;
+            GeomagneticField field = new GeomagneticField(
+                    (float) location.getLatitude(), (float) location.getLongitude(), (float) altitude,
+                    System.currentTimeMillis());
+            double declination = field.getDeclination();
+            point.put("declination_deg", Math.round(declination * 100.0) / 100.0);
+            point.put("heading_true", Math.round(((magnetic + declination + 360.0) % 360.0) * 10.0) / 10.0);
+        } catch (Exception e) {
+            Log.w(TAG, "declinación magnética no disponible: " + e.getMessage());
         }
     }
 
@@ -565,7 +857,7 @@ public class LocationTrackerService extends Service implements LocationListener 
                     return right.level - left.level;
                 }
             });
-            int limit = Math.min(scanResults.size(), 16);
+            int limit = Math.min(scanResults.size(), wifiLimit);
             for (int i = 0; i < limit; i++) {
                 ScanResult scan = scanResults.get(i);
                 JSONObject item = new JSONObject();
@@ -791,6 +1083,15 @@ public class LocationTrackerService extends Service implements LocationListener 
         }
     }
 
+    private boolean isLowRamDevice() {
+        try {
+            ActivityManager activityManager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+            return activityManager != null && activityManager.isLowRamDevice();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private boolean granted(String permission) {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.M
                 || checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED;
@@ -824,6 +1125,8 @@ public class LocationTrackerService extends Service implements LocationListener 
         } catch (Exception e) {
             // permiso de ubicación revocado o restricción del fabricante: nunca debe crashear
             Log.e(TAG, "no se pudo iniciar en primer plano: " + e.getMessage());
+            ErrorLogger.record("LocationTrackerService/startForeground",
+                    "no se pudo iniciar en primer plano: " + e.getMessage(), e);
             foregroundOk = false;
             stopSelf();
         }
@@ -875,6 +1178,89 @@ public class LocationTrackerService extends Service implements LocationListener 
         } catch (Exception e) {
             Log.w(TAG, "wake lock no disponible: " + e.getMessage());
         }
+    }
+
+    /**
+     * Vigila la red por defecto: en cuanto aparece cualquier conexión —Wi-Fi, datos móviles,
+     * ethernet— se vacía la cola y se publica en GitHub al instante, en lugar de esperar al
+     * siguiente latido de 60 s. Es lo que hace que el sistema aproveche «cualquier medio
+     * disponible» en cuanto lo haya, que es justo el momento en que los puntos atrasados importan.
+     */
+    private void watchNetworks() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N || networkCallback != null) {
+            return;
+        }
+        ConnectivityManager manager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (manager == null) {
+            return;
+        }
+        networkCallback = new ConnectivityManager.NetworkCallback() {
+            @Override
+            public void onAvailable(Network network) {
+                Log.i(TAG, "red disponible: se vacía la cola y se reintenta el fix");
+                if (client != null) {
+                    client.flushAsync();
+                }
+                if (publisher != null) {
+                    publisher.publishAsync();
+                }
+                if (gistPublisher != null) {
+                    // En cuanto aparece red se manda todo el histórico pendiente al Gist, no solo el
+                    // último punto: es la ventana en la que GitHub acepta la escritura.
+                    gistPublisher.publishAsync();
+                }
+                requestFreshFixes();
+            }
+
+            @Override
+            public void onLost(Network network) {
+                Log.w(TAG, "red perdida: la cola espera y sigue acumulando puntos");
+            }
+        };
+        try {
+            manager.registerDefaultNetworkCallback(networkCallback);
+        } catch (Exception e) {
+            Log.w(TAG, "no se pudo vigilar la red: " + e.getMessage());
+            networkCallback = null;
+        }
+    }
+
+    /**
+     * Pide distancias por Wi-Fi RTT cuando la posición no es buena.
+     *
+     * <p>El 802.11mc mide la distancia al punto de acceso con precisión de decímetros, algo que
+     * ningún otro método da en interiores: donde el GPS no llega, esta es la única medida geométrica
+     * real disponible. Se lanza como mucho una vez por minuto y solo si el fix no es ya preciso, así
+     * que no compite con el GPS cuando el GPS va bien.</p>
+     */
+    private void maybeRange(float accuracyM) {
+        if (lowRam) {
+            return;   // en dispositivos de 1 GB no se paga el coste de una medición RTT
+        }
+        if (rttSupported == null) {
+            rttSupported = WifiRttRanger.isSupported(this);
+        }
+        if (!rttSupported) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if ((now - lastRttRequestAt) < RTT_TTL_MS) {
+            return;
+        }
+        if (accuracyM > 0f && accuracyM <= RTT_TRIGGER_ACCURACY_M) {
+            return;   // el GPS ya va fino: no se gasta batería midiendo distancias
+        }
+        lastRttRequestAt = now;
+        WifiRttRanger.range(this, getMainExecutor(), new WifiRttRanger.Callback() {
+            @Override
+            public void onRanged(JSONArray results) {
+                if (results != null && results.length() > 0) {
+                    cachedRtt = results;
+                    rttAt = System.currentTimeMillis();
+                    Log.i(TAG, "distancias Wi-Fi RTT disponibles: " + results.length());
+                }
+            }
+        });
     }
 
     /* ------------------------------------------------------------------ LocationListener */

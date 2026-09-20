@@ -8,19 +8,21 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root{
-    --bg:#0b0f14; --panel:#121a23; --panel2:#0e151d; --line:#1f2b38;
-    --txt:#dbe6f0; --dim:#8199ad; --ok:#2ecc71; --warn:#f1c40f; --err:#e74c3c; --acc:#38bdf8;
+    /* OLED puro: negro #000 absoluto para que los píxeles se apaguen, acentos neón cian/púrpura */
+    --bg:#000000; --panel:#000000; --panel2:#08080b; --line:#1b1b21;
+    --txt:#e9fbff; --dim:#76838f; --ok:#00ff9c; --warn:#ffd166; --err:#ff2d6f;
+    --acc:#00e5ff; --acc2:#b14cff; --raw:#5c6b78;
     --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   }
   *{box-sizing:border-box}
   html,body{height:100%}
   body{margin:0;background:var(--bg);color:var(--txt);font:13px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;flex-direction:column}
-  header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+  header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;background:var(--panel);border-bottom:1px solid rgba(0,229,255,.16)}
   h1{font-size:14px;margin:0 8px 0 0;letter-spacing:.5px;font-weight:600;white-space:nowrap}
-  h1 span{color:var(--acc)}
+  h1 span{color:var(--acc);text-shadow:0 0 12px rgba(0,229,255,.55)}
   label{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.6px}
   input,select,button{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:inherit;font-size:12px;outline:none}
-  input:focus,select:focus{border-color:var(--acc)}
+  input:focus,select:focus{border-color:var(--acc);box-shadow:0 0 0 1px rgba(0,229,255,.28)}
   input[type=text]{min-width:150px}
   input[type=checkbox]{width:auto;padding:0;margin:0 4px 0 0;vertical-align:-1px;accent-color:var(--acc)}
   label.check{display:inline-flex;align-items:center;gap:2px;cursor:pointer;text-transform:uppercase}
@@ -34,9 +36,15 @@
   .pill.ok .dot{background:var(--ok);box-shadow:0 0 8px var(--ok)}
   .pill.err .dot{background:var(--err);box-shadow:0 0 8px var(--err)}
   .pill.wait .dot{background:var(--warn);box-shadow:0 0 8px var(--warn)}
+  /* Leyenda de las dos trazas que se dibujan a la vez */
+  .legend{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px;white-space:nowrap}
+  .legend i{display:inline-block;width:16px;height:3px;border-radius:2px}
+  .legend i:not(:first-child){margin-left:6px}
+  .legend i.raw{background:repeating-linear-gradient(90deg,var(--raw) 0 3px,transparent 3px 6px)}
+  .legend i.flt{background:linear-gradient(90deg,var(--acc),var(--acc2));box-shadow:0 0 8px rgba(0,229,255,.6)}
   main{flex:1;display:grid;grid-template-columns:1fr 320px;min-height:0}
   #stage{position:relative;min-height:0}
-  #map{position:absolute;inset:0;background:#0d1319}
+  #map{position:absolute;inset:0;background:#000}
   #radar{position:absolute;inset:0;display:none}
   #radar.on{display:block}
   #map.off{display:none}
@@ -50,13 +58,13 @@
   .kv{display:grid;grid-template-columns:repeat(2,1fr);gap:2px 10px;margin-top:6px;font-size:11px;color:var(--dim);font-family:var(--mono)}
   .kv b{color:var(--txt);font-weight:500}
   .bars{display:flex;gap:6px;align-items:center;margin-top:6px}
-  .bar{height:6px;background:#1b2632;border-radius:3px;overflow:hidden;flex:1}
-  .bar>i{display:block;height:100%;background:var(--acc)}
+  .bar{height:6px;background:#141419;border-radius:3px;overflow:hidden;flex:1}
+  .bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--acc),var(--acc2))}
   .sub{font-size:11px;color:var(--dim);font-family:var(--mono);word-break:break-all}
   .fake{color:var(--warn);font-size:10px;border:1px solid var(--warn);border-radius:4px;padding:0 4px}
   footer{display:flex;flex-wrap:wrap;gap:14px;padding:6px 12px;background:var(--panel);border-top:1px solid var(--line);font-size:11px;color:var(--dim);font-family:var(--mono)}
   footer b{color:var(--txt)}
-  .leaflet-container{background:#0d1319;font:inherit}
+  .leaflet-container{background:#000;font:inherit}
   .dev-marker{position:relative}
   .dev-marker .pin{width:26px;height:26px;border-radius:50% 50% 50% 0;transform-origin:50% 100%;background:var(--c);box-shadow:0 0 10px var(--c),0 0 0 2px rgba(0,0,0,.6)}
   .dev-marker .pulse{position:absolute;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;background:var(--c);opacity:.35;animation:pulse 2s infinite}
@@ -87,7 +95,8 @@
     <option value="radar">Radar</option>
   </select>
   <select id="followSel"><option value="">Sin seguimiento</option></select>
-  <label class="check" for="smoothToggle"><input type="checkbox" id="smoothToggle"> suavizado</label>
+  <label class="check" for="rawToggle"><input type="checkbox" id="rawToggle"> bruta</label>
+  <span class="legend" title="El visualizador dibuja siempre las dos trazas del mismo recorrido"><i class="raw"></i>bruta<i class="flt"></i>filtrada</span>
   <button id="toggleBtn" class="primary">Pausar</button>
   <button id="clearBtn" class="danger" title="Vacía el historial local del navegador">Limpiar</button>
   <span id="statusPill" class="pill wait"><i class="dot"></i><span id="statusText">iniciando…</span></span>
@@ -118,11 +127,15 @@
 (function () {
   'use strict';
 
-  var LS = { base: 'telemetry.base', token: 'telemetry.token', interval: 'telemetry.interval', view: 'telemetry.view', smooth: 'telemetry.smooth', feed: 'telemetry.feed', ghPath: 'telemetry.ghpath' };
+  var LS = { base: 'telemetry.base', token: 'telemetry.token', interval: 'telemetry.interval', view: 'telemetry.view', raw: 'telemetry.raw', feed: 'telemetry.feed', ghPath: 'telemetry.ghpath' };
   var POLL_LIMIT = 300;          // puntos por dispositivo y por sondeo
   var MAX_CLIENT_POINTS = 2000;  // retención local
   var STALE_MS = 60000;          // dispositivo considerado offline
   var HTTP_TIMEOUT_MS = 8000;
+  var RAW_COLOR = '#5c6b78';     // ruta bruta: gris neutro, así el neón identifica la filtrada
+  var SMOOTH_NEAR_DEG = 0.01;    // ~1 km: un punto suavizado no puede alejarse más de su medida
+  // Paleta neón (cian → púrpura): cada dispositivo recibe un color estable y siempre visible.
+  var NEON = ['#00e5ff', '#b14cff', '#ff4dd2', '#00ff9c', '#ffd166', '#7c8cff', '#ff6b6b', '#5eead4'];
   var FETCH_PATH = '/api/locations?format=compact&limit=' + POLL_LIMIT;
   var GH_DEFAULT_PATH = 'data/latest.json';   // publicado por la app o por el espejo del backend
 
@@ -130,7 +143,7 @@
   var ui = {
     base: el('apiBase'), token: el('apiToken'), interval: el('intervalSel'), view: el('viewSel'),
     feed: el('feedSel'),
-    follow: el('followSel'), smooth: el('smoothToggle'), toggle: el('toggleBtn'), clear: el('clearBtn'),
+    follow: el('followSel'), raw: el('rawToggle'), toggle: el('toggleBtn'), clear: el('clearBtn'),
     pill: el('statusPill'), statusText: el('statusText'), devices: el('devices'), hint: el('emptyHint'),
     map: el('map'), radar: el('radar'),
     statDevices: el('statDevices'), statOnline: el('statOnline'), statPoints: el('statPoints'),
@@ -142,7 +155,7 @@
     token: localStorage.getItem(LS.token) || window.TELEMETRY_TOKEN || '',
     interval: parseInt(localStorage.getItem(LS.interval), 10) || 3000,
     view: localStorage.getItem(LS.view) || 'map',
-    smooth: localStorage.getItem(LS.smooth) === '1',
+    raw: localStorage.getItem(LS.raw) !== '0',   // las dos trazas se ven por defecto
     feed: localStorage.getItem(LS.feed) || 'api',
     ghPath: localStorage.getItem(LS.ghPath) || GH_DEFAULT_PATH,
     running: true,
@@ -206,6 +219,38 @@
     return String(provider).replace('LocationManager/', '').replace('/last', '·last').replace('/current', '·now');
   }
 
+  // Cuántas constelaciones aportan satélites: un fix GPS-solo es mucho más frágil en ciudad que
+  // uno con GPS+Galileo+GLONASS+BeiDou, y eso se ve en este número.
+  function constellationCount(gnss) {
+    if (!gnss || !Array.isArray(gnss.sats) || !gnss.sats.length) { return 0; }
+    var seen = {};
+    var total = 0;
+    for (var i = 0; i < gnss.sats.length; i++) {
+      var sys = gnss.sats[i] && gnss.sats[i].sys;
+      if (sys && !seen[sys]) { seen[sys] = 1; total++; }
+    }
+    return total;
+  }
+
+  function satelliteSummary(gnss) {
+    if (!gnss || gnss.used === undefined) { return '—'; }
+    var text = gnss.used + '/' + gnss.visible;
+    if (gnss.snr_best) { text += ' ' + Math.round(gnss.snr_best) + 'dB'; }
+    var systems = constellationCount(gnss);
+    if (systems > 1) { text += ' · ' + systems + 's'; }
+    return text;
+  }
+
+  function rttSummary(rtt) {
+    if (!Array.isArray(rtt) || !rtt.length) { return ''; }
+    return rtt.slice(0, 2).map(function (m) {
+      if (!m || typeof m.distance_m !== 'number') { return '?'; }
+      var text = m.distance_m.toFixed(2) + ' m';
+      if (typeof m.std_dev_m === 'number') { text += ' ±' + m.std_dev_m.toFixed(2); }
+      return text;
+    }).join(' · ');
+  }
+
   function fmtAge(ms) {
     if (ms < 1000) { return 'ahora'; }
     if (ms < 60000) { return Math.round(ms / 1000) + ' s'; }
@@ -244,6 +289,7 @@
         var rows = Array.isArray(dev.points) ? dev.points : [];
         var latest = dev.latest || {};
         var lastTs = latest.ts || (rows.length ? rows[rows.length - 1][0] : 0);
+        var smooth = smoothFromRows(rows);   // solo existe si quien publicó el fichero filtró la traza
         return {
           device_id: dev.device_id,
           summary: {
@@ -264,9 +310,7 @@
           points: rows.map(function (r) {
             return [r[0], r[1], r[2], r[3], r[4], r[5]];
           }),
-          smooth: rows.map(function (r) {
-            return [r[0], r[1], r[2], r[3]];
-          })
+          smooth: smooth
         };
       })
     };
@@ -315,8 +359,10 @@
   function initMap() {
     if (!window.L || map) { return; }
     map = L.map(ui.map, { zoomControl: true, worldCopyJump: true, preferCanvas: true }).setView([20, 0], 2);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19, minZoom: 1, attribution: '&copy; OpenStreetMap'
+    // Teselas oscuras: con fondo OLED puro un mapa claro rompe el contraste y gasta más batería.
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
+      subdomains: 'abcd', maxZoom: 19, minZoom: 1,
+      attribution: '&copy; OpenStreetMap &copy; CARTO'
     }).addTo(map);
   }
 
@@ -345,9 +391,12 @@
     var w = canvas.clientWidth || 1, h = canvas.clientHeight || 1;
     ctx.clearRect(0, 0, w, h);
     var all = [];
-    state.devices.forEach(function (d) { d.pts.forEach(function (p) { all.push(p); }); });
+    state.devices.forEach(function (d) {
+      d.pts.forEach(function (p) { all.push(p); });
+      d.smoothPts.forEach(function (p) { all.push(p); });   // mismo encuadre para las dos trazas
+    });
     if (!all.length) {
-      ctx.fillStyle = '#8199ad'; ctx.font = '13px monospace'; ctx.textAlign = 'center';
+      ctx.fillStyle = '#76838f'; ctx.font = '13px monospace'; ctx.textAlign = 'center';
       ctx.fillText('sin datos de posición', w / 2, h / 2);
       return;
     }
@@ -362,21 +411,30 @@
     var cx = (minLng + maxLng) / 2, cy = (minLat + maxLat) / 2;
     var proj = function (p) { return [w / 2 + (p.lng - cx) * scale, h / 2 - (p.lat - cy) * scale]; };
 
-    ctx.strokeStyle = '#1b2632'; ctx.lineWidth = 1;
+    ctx.strokeStyle = '#16161b'; ctx.lineWidth = 1;
     for (var r = 0; r < 6; r++) {
       ctx.beginPath(); ctx.arc(w / 2, h / 2, Math.min(w, h) * 0.08 * (r + 1), 0, Math.PI * 2); ctx.stroke();
     }
-    ctx.fillStyle = '#8199ad'; ctx.font = '11px monospace'; ctx.textAlign = 'left';
+    ctx.fillStyle = '#76838f'; ctx.font = '11px monospace'; ctx.textAlign = 'left';
     ctx.fillText('modo radar · 1 px ≈ ' + (1 / scale).toFixed(5) + '°', 10, 18);
 
     state.devices.forEach(function (d) {
       if (!d.pts.length) { return; }
+      // Ruta bruta: los puntos reales, tenues y discontinuos sobre el radar.
+      if (state.raw && d.pts.length > 1) {
+        ctx.strokeStyle = RAW_COLOR; ctx.lineWidth = 1; ctx.setLineDash([3, 5]); ctx.beginPath();
+        d.pts.forEach(function (p, i) { var xy = proj(p); if (i) { ctx.lineTo(xy[0], xy[1]); } else { ctx.moveTo(xy[0], xy[1]); } });
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      // Ruta filtrada: si el origen no la publica, la única traza es la bruta.
+      var filtered = d.smoothPts.length > 1 ? d.smoothPts : d.pts;
       ctx.strokeStyle = d.color; ctx.lineWidth = 2; ctx.beginPath();
-      d.pts.forEach(function (p, i) { var xy = proj(p); if (i) { ctx.lineTo(xy[0], xy[1]); } else { ctx.moveTo(xy[0], xy[1]); } });
+      filtered.forEach(function (p, i) { var xy = proj(p); if (i) { ctx.lineTo(xy[0], xy[1]); } else { ctx.moveTo(xy[0], xy[1]); } });
       ctx.stroke();
-      var last = d.pts[d.pts.length - 1], xy = proj(last);
+      var last = filtered[filtered.length - 1], xy = proj(last);
       ctx.fillStyle = d.color; ctx.beginPath(); ctx.arc(xy[0], xy[1], 5, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#dbe6f0'; ctx.font = '11px monospace';
+      ctx.fillStyle = '#e9fbff'; ctx.font = '11px monospace';
       ctx.fillText(d.id, xy[0] + 9, xy[1] + 4);   // canvas: sin riesgo de inyección HTML
     });
   }
@@ -387,8 +445,8 @@
     var d = state.devices.get(id);
     if (d) { return d; }
     d = {
-      id: id, color: 'hsl(' + hashHue(id) + ', 85%, 55%)', pts: [], seen: new Set(),
-      smoothPts: [], smoothSeen: new Set(),
+      id: id, color: NEON[hashHue(id) % NEON.length], pts: [], seen: new Set(),
+      smoothPts: [], smoothSeen: new Set(), hasSmooth: false,
       latest: null, summary: null, polyline: null, marker: null, circle: null, smoothLine: null
     };
     state.devices.set(id, d);
@@ -402,30 +460,34 @@
     return '<b>' + esc(s.label || d.id) + '</b><br>' +
       'vel ' + fmtSpeed(p.speed) + '<br>' +
       '± ' + (p.acc !== null && p.acc !== undefined ? Math.round(p.acc) + ' m' : '—') +
-      (gnss.used !== undefined ? '<br>sat ' + gnss.used + '/' + gnss.visible + ' · snr ' + (gnss.snr_best || 0) : '') +
+      (gnss.used !== undefined ? '<br>sat ' + esc(satelliteSummary(gnss)) : '') +
+      (rttSummary(p.rtt) ? '<br>rtt ' + esc(rttSummary(p.rtt)) : '') +
+      (p.complete === false ? '<br>fix incompleto' : '') +
       (p.activity ? '<br>' + esc(p.activity) : '');
   }
 
   function renderMap() {
     if (!map) { return; }
     state.devices.forEach(function (d) {
+      // Traza 1 (bruta): los puntos reales del GPS, en gris neutro y discontinuos. Es la evidencia
+      // de campo: deja ver el ruido que el filtro está eliminando.
       var latlngs = d.pts.map(function (p) { return [p.lat, p.lng]; });
       if (!d.polyline) {
-        d.polyline = L.polyline(latlngs, { color: d.color, weight: 3, opacity: 0.9, lineJoin: 'round' }).addTo(map);
+        d.polyline = L.polyline(latlngs, { color: RAW_COLOR, weight: 2, dashArray: '2,6', opacity: 0, lineJoin: 'round' }).addTo(map);
       } else {
         d.polyline.setLatLngs(latlngs);
       }
-      // traza suavizada por el filtro del servidor (posición sin ruido de GPS)
+      d.polyline.setStyle({ opacity: (state.raw && latlngs.length > 1) ? 0.6 : 0 });
+
+      // Traza 2 (filtrada): la posición Kalman del servidor, sólida y en el color del dispositivo.
       var smoothLatLngs = d.smoothPts.map(function (p) { return [p.lat, p.lng]; });
       if (!d.smoothLine) {
-        d.smoothLine = L.polyline(smoothLatLngs, { color: d.color, weight: 2, dashArray: '5,6', opacity: 0 }).addTo(map);
+        d.smoothLine = L.polyline(smoothLatLngs, { color: d.color, weight: 3, opacity: 0, lineJoin: 'round' }).addTo(map);
       } else {
         d.smoothLine.setLatLngs(smoothLatLngs);
       }
-      var showSmooth = state.smooth && d.smoothPts.length > 1;
-      d.smoothLine.setStyle({ opacity: showSmooth ? 0.95 : 0 });
-      d.polyline.setStyle({ opacity: showSmooth ? 0.22 : 0.9 });
-      if (!d.latest) { return; }
+      d.smoothLine.setStyle({ opacity: d.smoothPts.length > 1 ? 0.95 : 0 });
+      if (!d.latest || !isFinite(d.latest.lat) || !isFinite(d.latest.lng)) { return; }
       var ll = [d.latest.lat, d.latest.lng];
       // rumbo: el del GPS y, si falta, el magnético de la brújula
       var heading = (d.latest.bearing !== null && d.latest.bearing !== undefined)
@@ -472,7 +534,7 @@
           '<span>pts <b>' + (s.points || d.pts.length) + '</b></span>' +
           '<span>prov <b>' + esc(shortProvider(p.provider)) + '</b></span>' +
           '<span>act <b>' + esc(p.activity || '—') + '</b></span>' +
-          '<span>sat <b>' + (p.gnss && p.gnss.used !== undefined ? p.gnss.used + '/' + p.gnss.visible + (p.gnss.snr_best ? ' ' + Math.round(p.gnss.snr_best) + 'dB' : '') : '—') + '</b></span>' +
+          '<span>sat <b>' + esc(satelliteSummary(p.gnss)) + '</b></span>' +
           '<span>alt <b>' + fmtAltitude(p) + '</b></span>' +
           '<span>±v <b>' + (p.vertAcc !== null && p.vertAcc !== undefined ? Math.round(p.vertAcc) + ' m' : '—') + '</b></span>' +
           '<span>avg acc <b>' + (s.avg_accuracy_m !== null && s.avg_accuracy_m !== undefined ? s.avg_accuracy_m + ' m' : '—') + '</b></span>' +
@@ -480,12 +542,14 @@
           '<span>bruta <b>' + fmtDistance(s.raw_distance_m || 0) + '</b></span>' +
           '<span>ruido <b>' + (s.noise_removed_m ? fmtDistance(s.noise_removed_m) : '0 m') + '</b></span>' +
         '</div>' +
-        '<div class="bars"><span style="font-size:10px;color:#8199ad">bat</span><span class="bar"><i style="width:' + battery + '%"></i></span>' +
+        '<div class="bars"><span style="font-size:10px;color:#76838f">bat</span><span class="bar"><i style="width:' + battery + '%"></i></span>' +
         (p.mock ? '<span class="fake">MOCK</span>' : '') +
-        (p.outlier ? '<span class="fake">SALTO</span>' : '') +
-        (p.lowQuality ? '<span class="fake">±BAJA</span>' : '') + '</div>' +
+        (p.outlier ? '<span class="fake">SALTO ' + esc(p.outlierReason || '?') + '</span>' : '') +
+        (p.lowQuality ? '<span class="fake">±BAJA</span>' : '') +
+        (d.pts.length > 1 && d.smoothPts.length < 2 ? '<span class="fake">SIN FILTRO</span>' : '') + '</div>' +
         (p.wifi && p.wifi.length ? '<div class="sub">wifi: ' + esc(p.wifi.slice(0, 2).map(function (w) { return (w.ssid || w.bssid || '?') + ' ' + (w.rssi !== undefined ? w.rssi : w.level) + 'dBm'; }).join(' · ')) + '</div>' : '') +
         (p.cell && p.cell.length ? '<div class="sub">celda: ' + esc(p.cell.slice(0, 2).map(function (c) { return (c.type || '?') + ' cid=' + (c.cid || '?') + ' ' + (c.rsrp || c.dbm || '') + 'dBm'; }).join(' · ')) + '</div>' : '') +
+        (rttSummary(p.rtt) ? '<div class="sub">rtt (802.11mc): ' + esc(rttSummary(p.rtt)) + '</div>' : '') +
       '</div>';
     }).join('');
     scroller.scrollTop = scroll;
@@ -518,6 +582,25 @@
 
   /* ------------------------------------------------------------------ ingesta */
 
+  // La posición filtrada viaja como columnas 9 y 10 de cada fila compacta ([…, activity, smooth_lat,
+  // smooth_lng]). Las escriben tanto el backend como el publicador Android (con el filtro del propio
+  // móvil). Se valida fila a fila, no en bloque: basta con que una medida sea poco fiable —un salto
+  // de GPS del que el filtro se protegió— para que no deba tumbar toda la traza filtrada.
+  function smoothFromRows(rows) {
+    var out = [];
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      if (row.length < 10) { return []; }        // columnas ausentes: el origen no filtra
+      var slat = row[8], slng = row[9];
+      if (typeof slat !== 'number' || typeof slng !== 'number') { continue; }
+      if (!isFinite(slat) || !isFinite(slng) || Math.abs(slat) > 90 || Math.abs(slng) > 180) { continue; }
+      // Un punto suavizado nunca se aleja un kilómetro de la observación que lo alimenta.
+      if (Math.abs(slat - row[1]) > SMOOTH_NEAR_DEG || Math.abs(slng - row[2]) > SMOOTH_NEAR_DEG) { continue; }
+      out.push([row[0], slat, slng, row[3]]);
+    }
+    return out;
+  }
+
   function ingest(payload) {
     var devices = payload.devices || [];
     var newest = 0;
@@ -528,6 +611,9 @@
         dev.points.forEach(function (row) {
           var ts = row[0];
           if (d.seen.has(ts)) { return; }
+          // Fila sin coordenada (fichero de Pages editado a mano): descartarla evita que Leaflet
+          // lance "Invalid LatLng" y se lleve por delante todo el render.
+          if (typeof row[1] !== 'number' || typeof row[2] !== 'number') { return; }
           d.seen.add(ts);
           d.pts.push({ ts: ts, lat: row[1], lng: row[2], speed: row[3], bearing: row[4], acc: row[5] });
           if (ts > newest) { newest = ts; }
@@ -535,17 +621,20 @@
         if (dev.points.length) { d.pts.sort(function (a, b) { return a.ts - b.ts; }); }
         while (d.pts.length > MAX_CLIENT_POINTS) { d.seen.delete(d.pts.shift().ts); }
       }
-      if (Array.isArray(dev.smooth)) {
-        dev.smooth.forEach(function (row) {
+      var rows = Array.isArray(dev.points) ? dev.points : [];
+      var source = (Array.isArray(dev.smooth) && dev.smooth.length) ? dev.smooth : smoothFromRows(rows);
+      if (source.length) {
+        source.forEach(function (row) {
           var ts = row[0];
           if (d.smoothSeen.has(ts)) { return; }
           d.smoothSeen.add(ts);
           d.smoothPts.push({ ts: ts, lat: row[1], lng: row[2], speed: row[3] });
         });
-        if (dev.smooth.length) { d.smoothPts.sort(function (a, b) { return a.ts - b.ts; }); }
+        d.smoothPts.sort(function (a, b) { return a.ts - b.ts; });
         while (d.smoothPts.length > MAX_CLIENT_POINTS) { d.smoothSeen.delete(d.smoothPts.shift().ts); }
+        d.hasSmooth = true;
       }
-      if (dev.latest) {
+      if (dev.latest && isFinite(dev.latest.lat) && isFinite(dev.latest.lng)) {
         d.latest = {
           lat: dev.latest.lat, lng: dev.latest.lng, ts: dev.latest.timestamp,
           speed: dev.latest.speed_mps, bearing: dev.latest.bearing, acc: dev.latest.accuracy,
@@ -554,12 +643,18 @@
           // alta precisión: GNSS, sensores y redes
           altitude: dev.latest.altitude, altitudeBaro: dev.latest.altitude_baro,
           vertAcc: dev.latest.vertical_accuracy, speedAcc: dev.latest.speed_accuracy,
-          heading: dev.latest.heading_magnetic, activity: dev.latest.activity,
+          // rumbo: se prefiere el corregido al norte verdadero (declinación magnética incluida)
+          heading: (dev.latest.heading_true !== undefined && dev.latest.heading_true !== null)
+              ? dev.latest.heading_true : dev.latest.heading_magnetic,
+          activity: dev.latest.activity,
           gnss: dev.latest.gnss, network: dev.latest.network,
           dataNetwork: dev.latest.data_network, operator: dev.latest.operator,
           steps: dev.latest.steps, pressure: dev.latest.pressure_hpa,
           altitudeFused: dev.latest.altitude_fused,
-          outlier: dev.latest.outlier, lowQuality: dev.latest.low_quality
+          altitudeMsl: dev.latest.altitude_msl, complete: dev.latest.complete,
+          rtt: dev.latest.rtt,
+          outlier: dev.latest.outlier, outlierReason: dev.latest.outlier_reason,
+          lowQuality: dev.latest.low_quality
         };
       } else if (!d.latest && d.pts.length) {
         d.latest = d.pts[d.pts.length - 1];
@@ -569,10 +664,14 @@
     var follow = ui.follow.value;
     if (map && follow && state.devices.has(follow)) {
       var t = state.devices.get(follow).latest;
-      if (t) { map.setView([t.lat, t.lng], Math.max(map.getZoom(), 15), { animate: true }); }
+      if (t && isFinite(t.lat) && isFinite(t.lng)) {
+        map.setView([t.lat, t.lng], Math.max(map.getZoom(), 15), { animate: true });
+      }
     } else if (map && state.firstLoad && newest) {
       var bounds = [];
-      state.devices.forEach(function (d) { if (d.latest) { bounds.push([d.latest.lat, d.latest.lng]); } });
+      state.devices.forEach(function (d) {
+        if (d.latest && isFinite(d.latest.lat) && isFinite(d.latest.lng)) { bounds.push([d.latest.lat, d.latest.lng]); }
+      });
       if (bounds.length) { map.fitBounds(bounds, { padding: [60, 60], maxZoom: 16 }); }
     }
     if (newest) { state.firstLoad = false; }
@@ -656,10 +755,10 @@
     localStorage.setItem(LS.view, state.view);
     applyView();
   });
-  ui.smooth.checked = state.smooth;
-  ui.smooth.addEventListener('change', function () {
-    state.smooth = ui.smooth.checked;
-    localStorage.setItem(LS.smooth, state.smooth ? '1' : '0');
+  ui.raw.checked = state.raw;
+  ui.raw.addEventListener('change', function () {
+    state.raw = ui.raw.checked;
+    localStorage.setItem(LS.raw, state.raw ? '1' : '0');
     render();
   });
   ui.feed.value = state.feed;
