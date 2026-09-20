@@ -26,7 +26,9 @@ ROOT = Path(__file__).resolve().parent.parent
 
 API_KEY = os.environ.get("TELEMETRY_API_KEY", "").strip()
 STORE_PATH = Path(os.environ.get("TELEMETRY_STORE", str(ROOT / "telemetry_store.jsonl")))
-FRONTEND_DIR = ROOT / "frontend"
+# El visor vive en `docs/` porque es la carpeta que publica GitHub Pages: con él en `frontend/`
+# el mapa solo existía en local y en el sitio publicado no había nada que enseñar.
+FRONTEND_DIR = ROOT / "docs"
 MAX_POINTS = int(os.environ.get("TELEMETRY_MAX_POINTS", "5000"))
 COMPACT_EVERY = int(os.environ.get("TELEMETRY_COMPACT_EVERY", "2000"))
 MAX_BODY_BYTES = int(os.environ.get("TELEMETRY_MAX_BODY", "131072"))
@@ -794,8 +796,21 @@ if FRONTEND_DIR.is_dir():
 
     @app.get("/")
     @app.get("/index.html")
+    @app.get("/mapa.html")
     def index():
-        return send_from_directory(FRONTEND_DIR, "index.html")
+        # La raíz sirve el mapa, no la portada de la documentación: al abrir el backend lo que se
+        # espera ver es el visor. La portada sigue en `/index.html`… que es este mismo mapa, así que
+        # la documentación se consulta por `doc.html`.
+        return send_from_directory(FRONTEND_DIR, "mapa.html")
+
+    @app.get("/<path:name>")
+    def web_file(name):
+        # El visor enlaza `gist.html` en relativo y el lector de documentos lee los `.md` de su
+        # propia carpeta: sin servir el resto de la carpeta, esos enlaces daban 404 servidos por el
+        # backend. `send_from_directory` rechaza las rutas que se salgan del directorio.
+        if not (FRONTEND_DIR / name).is_file():
+            return _error("no encontrado", 404)
+        return send_from_directory(FRONTEND_DIR, name)
 
 
 _load()

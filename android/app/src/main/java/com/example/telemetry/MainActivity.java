@@ -183,8 +183,9 @@ public class MainActivity extends Activity {
                         AppConfig.DEFAULT_MIN_DISTANCE_M)))), InputType.TYPE_CLASS_NUMBER);
 
         LinearLayout githubCard = card(root, "3 · Publicación directa (GitHub)",
-                "Opcional y sin servidor: escribe data/latest.json en tu repositorio. Token con permiso "
-                        + "'Contents: read and write' (solo ese). El visualizador de Pages lo lee directo.");
+                "Opcional y sin servidor: escribe docs/data/latest.json en tu repositorio. Token con "
+                        + "permiso 'Contents: read and write' (solo ese). El visualizador de Pages lo lee "
+                        + "directo (la ruta va dentro de docs/ porque es la carpeta que Pages publica).");
         ghTokenInput = addField(githubCard, "Token de GitHub (ghp_…)",
                 prefs.getString(AppConfig.KEY_GH_TOKEN, ""),
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
@@ -193,7 +194,7 @@ public class MainActivity extends Activity {
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         ghBranchInput = addField(githubCard, "Rama (main)",
                 prefs.getString(AppConfig.KEY_GH_BRANCH, AppConfig.DEFAULT_GH_BRANCH), InputType.TYPE_CLASS_TEXT);
-        ghPathInput = addField(githubCard, "Ruta del fichero (data/latest.json)",
+        ghPathInput = addField(githubCard, "Ruta del fichero (docs/data/latest.json)",
                 prefs.getString(AppConfig.KEY_GH_PATH, AppConfig.DEFAULT_GH_PATH),
                 InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
 

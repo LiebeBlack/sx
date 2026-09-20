@@ -1,8 +1,11 @@
-"""Valida la sintaxis del JavaScript embebido en los HTML de `frontend/` con `node --check`.
+"""Valida la sintaxis del JavaScript embebido en los HTML publicados de `docs/` con `node --check`.
 
 Es la red de seguridad en CI del único componente que no tiene compilador propio: el visualizador.
-Cubre los dos visores —`index.html` (mapa Leaflet, API propia) y `gist.html` (Gist como base de
+Cubre los dos visores —`mapa.html` (mapa Leaflet, API propia) y `gist.html` (Gist como base de
 datos, sin librerías externas)— porque un error de sintaxis en cualquiera deja la página en blanco.
+El lector de documentos (`doc.html`) no se comprueba aquí: no lleva JavaScript de la aplicación, y
+su parte comprobable son las anclas y los enlaces, que vigila `tools/check_config.py` en el caso de
+la guía de configuración.
 
     python tools/check_frontend.py
 """
@@ -16,8 +19,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
-HTML_PATHS = [FRONTEND_DIR / "index.html", FRONTEND_DIR / "gist.html"]
+WEB_DIR = Path(__file__).resolve().parent.parent / "docs"
+HTML_PATHS = [WEB_DIR / "mapa.html", WEB_DIR / "gist.html"]
 INLINE_SCRIPT = re.compile(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", re.DOTALL | re.IGNORECASE)
 
 

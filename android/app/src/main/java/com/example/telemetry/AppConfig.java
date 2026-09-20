@@ -67,7 +67,10 @@ public final class AppConfig {
     /* Valores por defecto, los mismos que muestra la pantalla. */
     public static final String DEFAULT_ENDPOINT = "https://mi-servidor.ejemplo.com";
     public static final String DEFAULT_GH_BRANCH = "main";
-    public static final String DEFAULT_GH_PATH = "data/latest.json";
+    // Dentro de `docs/` a propósito: es la carpeta que publica GitHub Pages, así que un fichero
+    // escrito aquí lo sirve el sitio y el visor lo lee sin backend. En la raíz del repositorio solo
+    // se vería publicando la raíz entera, y entonces no se vería la documentación.
+    public static final String DEFAULT_GH_PATH = "docs/data/latest.json";
     public static final String DEFAULT_GIST_FILE = "data.json";
     public static final long DEFAULT_MIN_TIME_MS = 5_000L;
     public static final float DEFAULT_MIN_DISTANCE_M = 5f;

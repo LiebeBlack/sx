@@ -114,7 +114,7 @@
   <label for="apiToken">Token</label>
   <input id="apiToken" type="text" placeholder="X-Api-Key" spellcheck="false" style="width:120px">
   <label for="ghPathInput" id="ghPathLabel" hidden>Fichero</label>
-  <input id="ghPathInput" type="text" placeholder="data/latest.json" spellcheck="false" style="width:170px" hidden>
+  <input id="ghPathInput" type="text" placeholder="docs/data/latest.json" spellcheck="false" style="width:170px" hidden>
   <label for="gistId" id="gistLabel" hidden>Gist</label>
   <input id="gistId" type="text" placeholder="ID o URL raw del gist" spellcheck="false" style="width:230px" hidden>
   <label for="intervalSel">Intervalo</label>
@@ -186,7 +186,9 @@ JavaScript, en <code>docs/doc.html</code>.</div>
   // Paleta neón (cian → púrpura): cada dispositivo recibe un color estable y siempre visible.
   var NEON = ['#00e5ff', '#b14cff', '#ff4dd2', '#00ff9c', '#ffd166', '#7c8cff', '#ff6b6b', '#5eead4'];
   var FETCH_PATH = '/api/locations?format=compact&limit=' + POLL_LIMIT;
-  var GH_DEFAULT_PATH = 'data/latest.json';   // publicado por la app o por el espejo del backend
+  // Publicado por la app o por el espejo del backend. Dentro de `docs/` porque es la carpeta que
+  // publica GitHub Pages; el visor prueba además la otra ubicación, por si se publica la raíz.
+  var GH_DEFAULT_PATH = 'docs/data/latest.json';
 
   var el = function (id) { return document.getElementById(id); };
   var ui = {
@@ -329,14 +331,22 @@ JavaScript, en <code>docs/doc.html</code>.</div>
 
   // En modo "github" el visualizador lee el fichero publicado (Contents API o espejo del
   // backend) desde el mismo dominio de Pages: sin backend y sin CORS.
-  function githubFileUrl() {
+  //
+  // Devuelve DOS direcciones posibles, no una, porque Pages publica una carpeta y puede ser la raíz
+  // o `docs/`: el fichero escrito en `docs/data/latest.json` se sirve como `/REPO/data/latest.json`
+  // con la carpeta `docs`, y como `/REPO/docs/data/latest.json` con la raíz. Probar las dos es lo
+  // que hace que la misma configuración del móvil funcione con las dos maneras de publicar.
+  function githubFileUrls() {
     var base = apiBase();
     if (!base) {
       var parts = location.pathname.split('/').filter(Boolean);
-      var repoBase = parts.length ? '/' + parts[0] + '/' : '/';   // p. ej. /telemetria/ en Pages
-      return repoBase + state.ghPath;
+      base = parts.length ? '/' + parts[0] : '';   // p. ej. /telemetria en Pages
     }
-    return base.replace(/\/+$/, '') + '/' + state.ghPath;
+    base = base.replace(/\/+$/, '');
+    var path = state.ghPath.replace(/^\/+/, '');
+    var urls = [base + '/' + path];
+    urls.push(path.indexOf('docs/') === 0 ? base + '/' + path.slice(5) : base + '/docs/' + path);
+    return urls;
   }
 
   function githubToApiShape(file) {
@@ -392,13 +402,28 @@ JavaScript, en <code>docs/doc.html</code>.</div>
     var timeout = setTimeout(function () { controller.abort(); }, HTTP_TIMEOUT_MS);
     var started = performance.now();
     // cache-buster: Pages sirve con caché, el parámetro fuerza contenido fresco
-    var url = githubFileUrl() + (state.ghPath.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now();
+    var stamp = (state.ghPath.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now();
+    var candidates = githubFileUrls().map(function (u) { return u + stamp; });
 
-    fetch(url, { method: 'GET', cache: 'no-store', signal: controller.signal })
-      .then(function (res) {
-        if (!res.ok) { throw new Error('HTTP ' + res.status + (res.status === 404 ? ' (¿ya publicó algún dispositivo?)' : '')); }
-        return res.json();
-      })
+    // Se prueban las direcciones en orden y se usa la primera que exista: un 404 en la segunda (o en
+    // la primera) no es un fallo, es la otra forma de publicar. El error solo se enseña si ninguna.
+    var probe = function (index) {
+      if (index >= candidates.length) {
+        // Rechazo, no `throw`: esto se llama fuera de una promesa y un error síncrono se escaparía
+        // del `.catch` que enseña el estado en pantalla.
+        return Promise.reject(new Error('HTTP 404 en ' + candidates.length + ' rutas (¿ya publicó algún dispositivo?)'));
+      }
+      return fetch(candidates[index], { method: 'GET', cache: 'no-store', signal: controller.signal })
+        .then(function (res) {
+          if (res.status === 404 && index + 1 < candidates.length) { return probe(index + 1); }
+          if (!res.ok) {
+            throw new Error('HTTP ' + res.status + (res.status === 404 ? ' (¿ya publicó algún dispositivo?)' : ''));
+          }
+          return res.json();
+        });
+    };
+
+    probe(0)
       .then(function (file) {
         if (!file || !Array.isArray(file.devices)) { throw new Error('fichero sin "devices"'); }
         var shape = githubToApiShape(file);
@@ -1062,10 +1087,26 @@ JavaScript, en <code>docs/doc.html</code>.</div>
     if (!window.L || map) { return; }
     map = L.map(ui.map, { zoomControl: true, worldCopyJump: true, preferCanvas: true }).setView([20, 0], 2);
     // Teselas oscuras: con fondo OLED puro un mapa claro rompe el contraste y gasta más batería.
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
+    var tiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
       subdomains: 'abcd', maxZoom: 19, minZoom: 1,
       attribution: '&copy; OpenStreetMap &copy; CARTO'
     }).addTo(map);
+    // Que falle la LIBRERIA ya se avisaba; que fallen las TESELAS no, y es el caso más probable:
+    // una red que bloquea el CDN, un móvil sin datos o el proveedor caído dejan el mapa en negro
+    // —fondo OLED puro— sin una palabra de explicación. Se cuentan dos fallos SIN ninguna carga
+    // para no avisar por un fallo puntual, y se calla en cuanto llega una tesela.
+    var ok = 0, bad = 0;
+    tiles.on('tileload', function () {
+      ok++;
+      if (ok === 1) { setNotice(''); }
+    });
+    tiles.on('tileerror', function () {
+      bad++;
+      if (ok || bad < 2) { return; }
+      setNotice('Las imágenes del mapa no cargan (teselas de CARTO/OpenStreetMap): verás el fondo '
+        + 'negro. La posición, la traza y la distancia siguen siendo correctas. Cambia a «Radar» '
+        + 'en el selector de vista para ver el recorrido sin necesitar red.');
+    });
   }
 
   function applyView() {

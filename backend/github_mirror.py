@@ -2,7 +2,8 @@
 
 Diseñado para producción sin servidor público propio: el backend corre en cualquier máquina
 (VPS, LAN, portátil) y el resultado es un JSON plano que GitHub Pages sirve como
-``https://usuario.github.io/repo/data/latest.json``.
+``https://usuario.github.io/repo/data/latest.json`` (la ruta por defecto es
+``docs/data/latest.json``, dentro de la carpeta que publica Pages).
 
 Seguridad y límites:
     · El token debe tener SOLO "Contents: read and write" del repo de destino (fine-grained).
@@ -46,7 +47,10 @@ def _config() -> Optional[Dict[str, str]]:
         "token": token,
         "repo": repo,
         "branch": os.environ.get("GITHUB_BRANCH", "main").strip() or "main",
-        "path": os.environ.get("GITHUB_PATH", "data/latest.json").strip() or "data/latest.json",
+        # Por defecto dentro de `docs/`: es la carpeta que publica GitHub Pages, así que es la única
+        # ruta que el visor puede leer sin servidor. Se puede cambiar con `GITHUB_PATH`.
+        "path": os.environ.get("GITHUB_PATH", "docs/data/latest.json").strip()
+        or "docs/data/latest.json",
     }
 
 

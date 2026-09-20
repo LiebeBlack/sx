@@ -29,8 +29,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Publica la telemetría directamente en un repositorio de GitHub (Contents API), sin servidor
  * propio: el móvil puede estar en Wi-Fi o en datos móviles. El resultado es un fichero compacto
- * {@code data/latest.json} que GitHub Pages sirve como estático y que el visualizador lee sin
- * backend. Cada fila de puntos lleva, además de la medida bruta, la posición ya filtrada.
+ * {@code docs/data/latest.json} que GitHub Pages sirve como estático y que el visualizador lee sin
+ * backend (dentro de {@code docs/} porque es la carpeta que Pages publica). Cada fila de puntos lleva, además de la medida bruta, la posición ya filtrada.
  *
  * <p>Concurrency: GitHub rechaza PUT con un {@code sha} obsoleto (409). Ante 409 se vuelve a
  * leer el fichero, se fusiona con lo publicado por otros dispositivos y se reintenta: nunca se
@@ -101,7 +101,8 @@ public final class GithubPublisher {
                 .putString(KEY_TOKEN, token == null ? "" : token.trim())
                 .putString(KEY_REPO, repo == null ? "" : repo.trim().replaceAll("/+$", ""))
                 .putString(KEY_BRANCH, branch == null || branch.trim().isEmpty() ? "main" : branch.trim())
-                .putString(KEY_PATH, path == null || path.trim().isEmpty() ? "data/latest.json" : path.trim())
+                .putString(KEY_PATH, path == null || path.trim().isEmpty()
+                        ? AppConfig.DEFAULT_GH_PATH : path.trim())
                 .putBoolean(KEY_ENABLED, enabled)
                 .apply();
     }
@@ -166,7 +167,7 @@ public final class GithubPublisher {
             String token = prefs.getString(KEY_TOKEN, "");
             String repo = prefs.getString(KEY_REPO, "");
             String branch = prefs.getString(KEY_BRANCH, "main");
-            String path = prefs.getString(KEY_PATH, "data/latest.json");
+            String path = prefs.getString(KEY_PATH, AppConfig.DEFAULT_GH_PATH);
 
             for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
                 JSONObject remote = downloadCurrent(token, repo, branch, path);

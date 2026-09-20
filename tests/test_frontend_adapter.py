@@ -1,4 +1,4 @@
-"""Prueba de comportamiento del adaptador del Gist que vive dentro de `frontend/index.html`.
+"""Prueba de comportamiento del adaptador del Gist que vive dentro de `docs/mapa.html`.
 
 El visor es el único componente del proyecto que no tiene compilador, y `tools/check_frontend.py` solo
 comprueba su **sintaxis**. Aquí se comprueba lo otro: que el contrato del Gist se interprete como dice
@@ -29,7 +29,9 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-VIEWER = ROOT / "frontend" / "index.html"
+# El visor vive en `docs/` (es la carpeta que publica GitHub Pages). Se renombró de `index.html` a
+# `mapa.html` para no chocar con la portada del sitio, que ocupa ese nombre en la misma carpeta.
+VIEWER = ROOT / "docs" / "mapa.html"
 
 INLINE_SCRIPT = re.compile(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", re.DOTALL | re.IGNORECASE)
 # Desde la primera ayuda del adaptador hasta el sondeo del Gist, que marca el final del bloque.
