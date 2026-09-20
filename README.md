@@ -50,7 +50,9 @@ vivo. El token que necesitas para este modo solo requiere el permiso `Gists: rea
    (`data/latest.json` por defecto). Guarda e inicia el rastreo.
 3. La app escribe el fichero vía Contents API: fusión por `device_id`, reintento automático ante
    409 (sha obsoleto) y publicación como mucho cada 60 s. Activa **Settings → Pages → Deploy from
-   branch** en el repo.
+   branch** en el repo: rama `main` y carpeta **`/ (root)`** — con `/docs` la raíz del sitio
+   responde 404, el visualizador no se publica y `data/latest.json` no se sirve (ver `docs/SETUP.md`,
+   Paso 4).
 4. En el visualizador, elige la fuente **GitHub Pages (fichero)**. Desde la propia web de Pages la
    ruta por defecto ya es correcta; para otro repo escribe `https://usuario.github.io/repo` en el
    campo API.

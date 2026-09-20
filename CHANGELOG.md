@@ -44,8 +44,19 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y
   trabajo de WorkManager, fallos del receptor de arranque, lotes que no se pueden serializar y
   rechazos del ejecutor de red. Las condiciones esperadas —red caída, arranque en segundo plano
   bloqueado por Android 12+— se quedan en `logcat` para no convertir el fichero en ruido.
+- **`index.html` en la raíz del repositorio**: es la portada del sitio de Pages cuando se publica la
+  raíz. Redirige al visualizador en vivo (que deduce la base del repositorio del primer segmento de
+  la ruta, así que funciona igual servido desde `/` o desde `/frontend/`) y deja a un clic el visor
+  autónomo del canal Gist y la documentación renderizada.
 
 ### Corregido
+
+- **El sitio de Pages respondía 404 en la raíz** (`index.html`, `docs/SETUP.md`): el repositorio
+  tenía Pages publicando la carpeta **`/docs`**, que no tiene `index.html` —de ahí el «For root URLs
+  you must provide an index.html»— y que además dejaba fuera el visualizador de `frontend/` y el
+  fichero `data/latest.json`. Ahora la raíz tiene su `index.html` y la documentación explica el
+  fallo y la única configuración correcta (`main` + `/ (root)`; la carpeta `/frontend` que
+  recomendaba antes no existe como opción en Pages).
 
 Y en el run #5, el primero que llegó a compilar de verdad: los **dos jobs de Python quedaron en
 verde** (3.10 y 3.12, con la suite completa y la guarda nueva del workflow incluidas) y el de Android
