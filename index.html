@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Telemetría · abriendo el visualizador</title>
+<!--
+  Raíz del sitio de GitHub Pages.
+
+  Este fichero SOLO se publica si Pages está configurado como `main` + carpeta `/ (root)`.
+  Con la carpeta en `/docs` el sitio sirve únicamente `docs/`, que no tiene index.html: el dominio
+  responde 404 («For root URLs you must provide an index.html»), el visualizador de `frontend/` no
+  se publica y `data/latest.json` tampoco se sirve. Ver docs/SETUP.md, Paso 4.
+
+  El espectador en vivo vive en `frontend/index.html` y deduce la base del repositorio del primer
+  segmento de la ruta (`/REPO/`), así que funciona igual servido desde aquí o desde `/frontend/`.
+-->
+<meta http-equiv="refresh" content="0; url=frontend/index.html">
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-content: center; gap: .75rem;
+    background: #000; color: #00ffff; text-align: center; font: 16px/1.6 system-ui, sans-serif;
+  }
+  p { margin: 0; }
+  a { color: #00ffff; }
+  small { color: #800080; }
+</style>
+</head>
+<body>
+  <p>Abriendo el <a href="frontend/index.html">visualizador en vivo</a>…</p>
+  <p><small>Si no ocurre solo:
+    <a href="frontend/gist.html">visor autónomo del canal Gist</a> ·
+    <a href="docs/API.html">API</a> ·
+    <a href="docs/SETUP.html">puesta en marcha</a>
+  </small></p>
+</body>
+</html>

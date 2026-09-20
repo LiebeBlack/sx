@@ -104,15 +104,18 @@ coordenadas (se crea en la primera publicación, ~1 min tras iniciar el rastreo)
 1. En el repo: **Settings → Pages** (barra lateral).
 2. En **Build and deployment → Source**: **Deploy from a branch**.
 3. **Branch**: `main` y carpeta **`/ (root)`** → **Save**.
-   - El visualizador vive en `frontend/`, pero se sirve desde la raíz del dominio de Pages solo si
-     está en la raíz del repo; si prefieres servir `frontend/` directamente, elige carpeta
-     **`/frontend`** — en ese caso la web queda en `https://TU_USUARIO.github.io/telemetria/`
-     y la ruta del fichero publicado sigue siendo `data/latest.json` relativa a la raíz: en la
-     web (Paso 5) escribe la URL absoluta del fichero en el campo **API**:
-     `https://TU_USUARIO.github.io/telemetria/data/latest.json`.
-   - Configuración más simple y recomendada: raíz `/ (root)` y copia (o symlink no; copia) el
-     contenido de `frontend/` a la raíz al publicar, o publica el repo con `frontend/` tal cual y
-     usa la URL con `/frontend/`.
+
+> **La carpeta `/docs` no sirve, y es el fallo más fácil de cometer.** GitHub Pages solo ofrece
+> `/ (root)` o `/docs`. Con `/docs` el sitio publica *únicamente* esa carpeta: no hay `index.html`
+> en ella, así que la raíz del dominio responde **404** con el mensaje «For root URLs you must
+> provide an index.html»; además el visualizador de `frontend/` no existe en el sitio y
+> `data/latest.json` tampoco se sirve, con lo que la fuente **GitHub Pages (fichero)** se queda sin
+> datos.
+>
+> Con `/ (root)` funciona todo: la raíz la sirve el `index.html` que hay en la raíz del repositorio
+> —redirige al visualizador en vivo y deja a un clic el visor autónomo de `frontend/gist.html`—, el
+> fichero de datos queda en `https://TU_USUARIO.github.io/REPO/data/latest.json` y la documentación
+> se renderiza en `…/docs/API.html` y `…/docs/SETUP.html`.
 4. Espera ~1 minuto. En **Settings → Pages** aparecerá la URL pública:
    `https://TU_USUARIO.github.io/telemetria/`.
 
@@ -124,7 +127,8 @@ coordenadas (se crea en la primera publicación, ~1 min tras iniciar el rastreo)
 
 ## Paso 5 · Abrir la web y elegir la fuente GitHub
 
-1. Abre `https://TU_USUARIO.github.io/telemetria/` (o `…/frontend/` según el Paso 4).
+1. Abre `https://TU_USUARIO.github.io/telemetria/`: la raíz del sitio redirige al visualizador en
+   vivo (el visor autónomo del canal Gist está en `…/frontend/gist.html`).
 2. En el desplegable de fuente, cambia **API en vivo** por **GitHub Pages (fichero)**.
    - Desde el propio dominio de Pages la ruta por defecto ya es correcta (deduce
      `/<repo>/data/latest.json` de la URL actual): cero configuración, cero CORS.
